@@ -8,6 +8,8 @@ import {
 } from '@eightkk/vue-weave/core'
 import { TreeGrid } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { createSSRApp, h } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 
 const rows = [
   { id: 'tools', label: 'Tools' },
@@ -173,6 +175,28 @@ test('projectTreeGridRows reads sort rules by own key only: columns named like O
     assert.match(svg, /<svg[^>]* width="200"/)
     assert.ok(svg.indexOf('>1<') < svg.indexOf('>2<') && svg.indexOf('>2<') < svg.indexOf('>3<'), id)
   }
+})
+
+test('TreeGrid without lines keeps its header controls on the server only when they are opted in', async () => {
+  // Without header controls: the plain empty state, a single row with the text and no header.
+  // Slot and fragment comments are left out of the comparisons.
+  const bare = html => html.replace(/<!--[^]*?-->/g, '')
+  const plain = bare(await renderComponent(TreeGrid, { rows: [], columns }))
+  assert.match(plain, /aria-rowcount="1"[^>]*tabindex="0"[^>]*><div class="vw-tree-grid-empty" role="row" aria-rowindex="1"><div role="gridcell">No rows to display<\/div><\/div><\/div>/)
+  assert.doesNotMatch(plain, /columnheader/)
+  // With them: the header row stays (row 1) and the empty text is row 2 of the body.
+  const kept = bare(await renderComponent(TreeGrid, { rows: [], columns, sortableColumns: true, filterableColumns: true, filters: [{ columnId: 'price', text: 'zzzz' }] }))
+  assert.match(kept, /role="treegrid"[^>]*aria-rowcount="2"[^>]*tabindex="0"/)
+  assert.match(kept, /class="vw-tree-grid-head[^"]*" role="row" aria-rowindex="1"/)
+  assert.match(kept, /aria-label="Sort by Price"/)
+  assert.match(kept, /aria-label="Filter Price \(filtered\)"/)
+  assert.match(kept, /<div class="vw-tree-grid-body" role="rowgroup"><div class="vw-tree-grid-empty" role="row" aria-rowindex="2"[^>]*><div role="gridcell">No rows to display<\/div><\/div>/)
+  // Invalid data still shows the plain empty state.
+  const app = createSSRApp({ render: () => h(TreeGrid, { rows: [{ id: 'a', label: 'A', parentId: 'a' }], columns, sortableColumns: true }) })
+  app.config.errorHandler = () => {}
+  const invalid = bare(await renderToString(app))
+  assert.match(invalid, /<div class="vw-tree-grid-empty" role="row" aria-rowindex="1">/)
+  assert.doesNotMatch(invalid, /columnheader/)
 })
 
 test('TreeGrid reports invalid header options through validation-error', async () => {

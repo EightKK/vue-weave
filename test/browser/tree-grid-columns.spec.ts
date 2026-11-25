@@ -1,6 +1,6 @@
 // TreeGrid header controls: column resizing (keyboard, pointer preview, cancellation, rejection, right-to-left), header
 // sorting and filtering with the hierarchy kept, focus staying on the header controls, and the site example.
-import { expect, test, openExample, pageErrors, serveFixture, type Page } from './support'
+import { expect, expectStructuralAccessibility, test, openExample, pageErrors, serveFixture, type Page } from './support'
 
 /** The fixture in fixtures/tree-grid-columns.html: Tools (Saw 30, Drill 120, Hammer 15) and Garden (Hose 25, Rake 8). */
 async function openColumns(page: Page, search = '') {
@@ -193,6 +193,115 @@ test('a separator drag previews the width, proposes on release and is cancelled 
   await page.mouse.up()
   expect(await widthOf(header('Price'))).toBe(140)
   expect((await logged()).filter(entry => entry[0] === 'column-resize')).toEqual([['column-resize', 'price', 100, 140, 'pointer']])
+  expect(errors).toEqual([])
+})
+
+const all = ['Tools', 'Saw', 'Drill', 'Hammer', 'Garden', 'Hose', 'Rake']
+
+test('a filter that matches nothing keeps the header and its dialog, so the text can be edited or cleared', async ({ page }) => {
+  const { errors, grid, button, order, logged } = await openColumns(page)
+  await button('Filter Name').click()
+  const dialog = grid.getByRole('dialog', { name: 'Filter Name', exact: true })
+  const box = dialog.getByRole('searchbox', { name: 'Contains' })
+  await expect(box).toBeFocused()
+  await box.pressSequentially('zzzz')
+  // No rows: the header row stays with the open dialog, and the empty text is the second row of the grid.
+  await expect(grid.getByRole('rowheader')).toHaveCount(0)
+  await expect(grid).toHaveAttribute('aria-rowcount', '2')
+  await expect(grid.getByRole('row')).toHaveCount(2)
+  await expect(grid.getByRole('row').nth(1)).toHaveAttribute('aria-rowindex', '2')
+  await expect(grid.getByRole('gridcell', { name: 'No rows to display', exact: true })).toBeVisible()
+  await expect(dialog).toBeVisible()
+  await expect(box).toBeFocused()
+  await expect(box).toHaveValue('zzzz')
+  await expect(button('Filter Name (filtered)')).toHaveAttribute('aria-expanded', 'true')
+  await expectStructuralAccessibility(grid)
+  // Correcting the text brings matching rows back.
+  await box.fill('saw')
+  await expect.poll(order).toEqual(['Tools', 'Saw'])
+  await expect(box).toBeFocused()
+  // From zero rows again, Clear filter restores every row and keeps the focus in the dialog.
+  await box.fill('zzzz')
+  await expect(grid.getByRole('rowheader')).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Clear filter' }).click()
+  await expect.poll(order).toEqual(all)
+  await expect(box).toBeFocused()
+  await expect(box).toHaveValue('')
+  await expect(grid).toHaveAttribute('aria-rowcount', '8')
+  await expect(grid.getByRole('gridcell', { name: 'No rows to display' })).toHaveCount(0)
+  const proposed = (await logged()).filter(entry => entry[0] === 'filters').map(entry => entry[1])
+  expect(proposed.at(-1)).toEqual([])
+  expect(proposed).toContainEqual([{ columnId: '$label', text: 'zzzz' }])
+  expect(errors).toEqual([])
+})
+
+test('by keyboard only, a filter that matches nothing can be corrected and cleared from the zero-row grid', async ({ page }) => {
+  const { errors, grid, button, order } = await openColumns(page)
+  await page.getByRole('textbox', { name: 'Notes' }).focus()
+  // The tree column header comes first in the tab order: its sort button, then its filter button.
+  await page.keyboard.press('Tab')
+  await expect(button('Sort by Name')).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(button('Filter Name')).toBeFocused()
+  await page.keyboard.press('Enter')
+  const dialog = grid.getByRole('dialog', { name: 'Filter Name', exact: true })
+  const box = dialog.getByRole('searchbox', { name: 'Contains' })
+  await expect(box).toBeFocused()
+  await page.keyboard.type('zzzz')
+  await expect(grid.getByRole('rowheader')).toHaveCount(0)
+  await expect(box).toBeFocused()
+  await expect(box).toHaveValue('zzzz')
+  // Backspace and new text: Hammer matches, with its parent.
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Backspace')
+  await expect.poll(order).toEqual(all)
+  await page.keyboard.type('ham')
+  await expect.poll(order).toEqual(['Tools', 'Hammer'])
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.type('nothing')
+  await expect(grid.getByRole('rowheader')).toHaveCount(0)
+  await expect(box).toHaveValue('nothing')
+  // Tab reaches Clear filter in the dialog; Enter clears, and the focus returns to the box.
+  await page.keyboard.press('Tab')
+  await expect(dialog.getByRole('button', { name: 'Clear filter' })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect.poll(order).toEqual(all)
+  await expect(box).toBeFocused()
+  // Escape closes the dialog and returns the focus to its button.
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(button('Filter Name')).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('at zero rows the sort buttons and the column separators still work', async ({ page }) => {
+  const { errors, grid, header, button, separator, logged } = await openColumns(page)
+  await button('Filter Price').click()
+  await grid.getByRole('dialog', { name: 'Filter Price' }).getByRole('searchbox').fill('999')
+  await expect(grid.getByRole('rowheader')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(button('Filter Price (filtered)')).toBeFocused()
+  // The sort button proposes, and the header shows the applied sort.
+  await button('Sort by Price').click()
+  await expect(header('Price')).toHaveAttribute('aria-sort', 'ascending')
+  await expect(button('Sort by Price (ascending)')).toBeFocused()
+  // The separator resizes by keyboard and by pointer.
+  const price = separator('Price')
+  await price.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(price).toHaveAttribute('aria-valuenow', '110')
+  expect(await widthOf(header('Price'))).toBe(110)
+  const box = (await price.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 })
+  await expect(price).toHaveAttribute('aria-valuenow', '140')
+  await page.mouse.up()
+  expect(await widthOf(header('Price'))).toBe(140)
+  await expect(grid.getByRole('gridcell', { name: 'No rows to display', exact: true })).toBeVisible()
+  await expectStructuralAccessibility(grid)
+  expect((await logged()).filter(entry => entry[0] === 'sort' || entry[0] === 'column-resize')).toEqual([
+    ['sort', [{ ruleId: 'price', direction: 'asc' }]], ['column-resize', 'price', 100, 110, 'keyboard'], ['column-resize', 'price', 110, 140, 'pointer'],
+  ])
   expect(errors).toEqual([])
 })
 
