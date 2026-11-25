@@ -220,7 +220,8 @@ const currentVersion = 1
 function ordered(source: { [key: string]: unknown }, order: readonly string[]) {
   const out: { [key: string]: unknown } = {}
   for (const key of order) if (source[key] !== undefined) out[key] = source[key]
-  for (const key of Object.keys(source)) if (!(key in out)) out[key] = source[key]
+  // `Object.hasOwn`, not `in`: a key named like an inherited member (`constructor`, `toString`) must not be dropped.
+  for (const key of Object.keys(source)) if (!Object.hasOwn(out, key)) out[key] = source[key]
   return out
 }
 

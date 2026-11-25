@@ -68,6 +68,20 @@ test('shiftEventCalendarDate keeps the local time and clamps the day of the mont
   assert.equal(shiftEventCalendarDate('day', before, 1, { timeZone }), Date.parse('2026-10-25T09:00:00+01:00'))
 })
 
+test('the month helpers keep the years 0 to 99 instead of reading them as 1900 to 1999', () => {
+  const civil = (year, month, date, hours = 0) => {
+    const value = new Date(0)
+    value.setUTCFullYear(year, month - 1, date)
+    return value.getTime() + hours * hour
+  }
+  const anchor = civil(50, 3, 15, 9)
+  assert.deepEqual(eventCalendarRange('month', anchor), { start: civil(50, 2, 28), end: civil(50, 4, 4) })
+  const inMonth = eventCalendarDays('month', anchor).filter(entry => entry.inMonth)
+  assert.deepEqual([inMonth.length, inMonth[0].year, inMonth[0].month, inMonth[0].day], [31, 50, 3, 1])
+  assert.equal(shiftEventCalendarDate('month', anchor, 1), civil(50, 4, 15, 9))
+  assert.equal(shiftEventCalendarDate('month', civil(99, 12, 31, 9), 2), civil(100, 2, 28, 9))
+})
+
 test('calendar helpers validate their inputs', () => {
   assert.throws(() => eventCalendarRange('year', 0), { name: 'RangeError', message: 'Unknown event calendar view: year' })
   assert.throws(() => eventCalendarDays('day', Number.NaN), { name: 'RangeError', message: 'date must be finite' })
