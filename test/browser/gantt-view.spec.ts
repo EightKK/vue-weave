@@ -32,6 +32,8 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
   await page.getByRole('button', { name: 'Release 15:00–15:00', exact: true }).press('ArrowRight')
   await expect(page.getByRole('button', { name: 'Release 15:15–15:15', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '1,000 resources', exact: true }).click()
+  // Count the rendered rows only once the large data set is shown, so the check cannot pass on the previous one.
+  await expect(page.getByText('Resource 1', { exact: true })).toBeVisible()
   expect(await page.locator('.vw-gantt-row').count()).toBeLessThan(15)
   await page.getByRole('button', { name: 'Last resource', exact: true }).click()
   await expect(page.getByText('Resource 1000', { exact: true })).toBeVisible()
