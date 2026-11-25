@@ -52,14 +52,22 @@ export { collapseGraphGroups } from './graphCollapse.js'
 export type {
   GraphCollapsedGroup, GraphCollapsedNode, GraphCollapsedNodeData, GraphCollapseOptions, GraphCollapseResult, GraphShownEdge, GraphShownNode,
 } from './graphCollapse.js'
-export { routeGraphEdges, graphPolylinePath, graphSmoothPath } from './graphRouting.js'
-export type { GraphEdgeStyle, GraphEdgeRouteOptions } from './graphRouting.js'
+export { routeGraphEdges, createGraphRouteCache, graphPolylinePath, graphSmoothPath } from './graphRouting.js'
+export type { GraphEdgeStyle, GraphEdgeRouteOptions, GraphRouteCache } from './graphRouting.js'
 export { findOrthogonalRoute } from './graphObstacleRouting.js'
 export type { GraphObstacleAvoidance, GraphRouteEnd } from './graphObstacleRouting.js'
 export { placeGraphEdgeLabels } from './graphLabelPlacement.js'
 export type { GraphEdgeLabelPlacement, GraphEdgeLabelPlacementOptions, GraphEdgeLabelSize } from './graphLabelPlacement.js'
 export * from './leveling.js'
 export * from './exportSvg.js'
+export { renderTaskBoardSvg } from './exportBoardSvg.js'
+export type { TaskBoardSvgLabels, TaskBoardSvgOptions, TaskBoardExportOptions, TaskBoardPngExportOptions } from './exportBoardSvg.js'
+export { renderEventCalendarSvg } from './exportCalendarSvg.js'
+export type {
+  EventCalendarSvgLabels, EventCalendarSvgOptions, EventCalendarExportOptions, EventCalendarPngExportOptions,
+} from './exportCalendarSvg.js'
+export { renderTreeGridSvg } from './exportGridSvg.js'
+export type { TreeGridSvgOptions, TreeGridExportOptions, TreeGridPngExportOptions } from './exportGridSvg.js'
 export {
   timelineWbsCodes, timelineRowPosition, moveTimelineRow, indentTimelineRow, outdentTimelineRow,
 } from './rowHierarchy.js'
@@ -163,12 +171,13 @@ export type {
 } from './graphIncremental.js'
 export {
   eventCalendarRange, eventCalendarDays, eventCalendarMonthGrid, shiftEventCalendarDate, eventCalendarTimeOfDay, eventCalendarTimeAt,
-  layoutCalendarDayEvents, packCalendarEventLanes, validateCalendarEvents,
+  layoutCalendarDayEvents, packCalendarEventLanes, layoutCalendarAgenda, validateCalendarEvents,
 } from './eventCalendar.js'
 export type {
-  EventCalendarView, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
+  EventCalendarView, EventCalendarViewName, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
   CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
   EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarBackgroundClick, EventCalendarLabels,
+  CalendarAgendaItem, CalendarAgendaDay,
 } from './eventCalendar.js'
 export {
   parseRecurrenceRule, formatRecurrenceRule, expandRecurrence, expandRecurringEvents, applyRecurringEdit,
@@ -200,6 +209,7 @@ export {
   treeGridCellValue, isTreeGridCellEditable, treeGridFieldSpec, matchTreeGridEntities, treeGridRangeBounds, treeGridRangeText,
   buildTreeGridPaste, buildTreeGridClear, buildTreeGridFill, applyTreeGridEdits, treeGridRowCreate, insertTreeGridRow,
   deleteTreeGridRows, treeGridRowMoveForKey, treeGridDropAt, treeGridCellContentFromTimeBucket, treeGridCellsFromTimeBuckets,
+  treeGridCellText, projectTreeGridRows,
 } from './treeGrid.js'
 export type {
   TreeGridValue, TreeGridRow, TreeGridCellStatus, TreeGridMissingCell, TreeGridCellState, TreeGridCellContent, TreeGridCell,
@@ -207,5 +217,6 @@ export type {
   TreeGridCursor, TreeGridRange, TreeGridSpan, TreeGridCellView, TreeGridKeyInput, TreeGridKeyContext, TreeGridKeyAction,
   TreeGridActivation, TreeGridCellEdit, TreeGridSheetEdit, TreeGridRowCreate, TreeGridRowDelete, TreeGridEditCancelReason,
   TreeGridEditCancel, TreeGridValidatorResult, TreeGridCellEditValidator, TreeGridSheetEditValidator, TreeGridRowCreateValidator,
-  TreeGridRowDeleteValidator, TreeGridDrop, TreeGridLabels, TreeGridEntityMatches, TreeGridSheetBuild,
+  TreeGridRowDeleteValidator, TreeGridDrop, TreeGridLabels, TreeGridEntityMatches, TreeGridSheetBuild, TreeGridTextOptions,
+  TreeGridViewState, TreeGridViewInput, TreeGridViewProjection,
 } from './treeGrid.js'

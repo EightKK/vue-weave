@@ -60,4 +60,14 @@ void [firstCell, sameFunction, moved, incomplete, badColumn, board.value?.focusC
   <TaskBoard :columns="columns" :cards="literalCards">
     <template #card="{ card }">{{ card.detail }} {{ card.tone }}</template>
   </TaskBoard>
+  <TaskBoard :columns="columns" :cards="cards" collapsible>
+    <!-- The column-header slot gets the collapse state and toggle of the header it replaces. -->
+    <template #column-header="{ column, collapsed, toggle, toggleLabel }">
+      <button type="button" :aria-expanded="!collapsed" :aria-label="toggleLabel" @click="toggle()">{{ column.label }}</button>
+      <!-- @vue-expect-error toggle takes no argument. -->
+      {{ toggle(column.id) }}
+      <!-- @vue-expect-error collapsed is a boolean. -->
+      {{ collapsed.length }}
+    </template>
+  </TaskBoard>
 </template>

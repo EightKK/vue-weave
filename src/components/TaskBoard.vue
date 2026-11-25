@@ -6,6 +6,8 @@ import {
   type TaskBoardMoveCancelReason, type TaskBoardPosition,
 } from '../core/taskBoard.js'
 import type { ChartDirection } from '../core/types.js'
+import { renderTaskBoardSvg, type TaskBoardExportOptions, type TaskBoardPngExportOptions } from '../core/exportBoardSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 import { usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
@@ -78,8 +80,15 @@ const emit = defineEmits<{
 defineSlots<{
   /** Content of a card button. Keep it non-interactive: the card is a button. */
   card(props: { card: C; selected: boolean; moving: boolean; column: TaskBoardColumn; lane?: TaskBoardLane }): unknown
-  /** Content of a column header, with the card count and WIP state of the column. */
-  'column-header'(props: { column: TaskBoardColumn; status: TaskBoardColumnStatus }): unknown
+  /**
+   * Content of a column header, with the card count and WIP state of the column. It replaces the whole header, the
+   * built-in collapse toggle included: `collapsed` is the column's collapsed state, `toggle()` proposes the toggled
+   * `collapsedColumnIds` (`update:collapsedColumnIds`) like the built-in toggle, and `toggleLabel` is that toggle's
+   * accessible name ("Collapse To do" or "Expand To do"), so the slot can draw its own toggle button.
+   */
+  'column-header'(props: {
+    column: TaskBoardColumn; status: TaskBoardColumnStatus; collapsed: boolean; toggle: () => void; toggleLabel: string
+  }): unknown
   /** Content of a cell without cards, and (without `column`) of a board without columns. */
   empty(props: { column?: TaskBoardColumn; lane?: TaskBoardLane }): unknown
 }>()
@@ -492,11 +501,43 @@ function cardStyle(card: C) {
     ? { transform: `translate(${offset.x}px, ${offset.y}px)` } : undefined
 }
 
+/**
+ * A standalone SVG document of the board with the default rendering and the current theme colours: every column, lane
+ * and shown card (respecting `filter` and the collapsed columns and lanes), whatever is scrolled into view. Slots are
+ * not used. Throws the validation error of invalid props.
+ */
+function exportSvg(options: TaskBoardExportOptions<C> = {}) {
+  if (validationError.value) throw validationError.value
+  const { includeSelection = true, theme, ...rest } = options
+  const style = root.value ? getComputedStyle(root.value) : undefined
+  const read = (name: string) => style?.getPropertyValue(name).trim() || undefined
+  return renderTaskBoardSvg(props.cards, props.columns, {
+    ...rest,
+    lanes: props.lanes, filter: props.filter, collapsedColumnIds: collapsedColumns.value, collapsedLaneIds: collapsedLanes.value,
+    selectedId: includeSelection ? props.selectedId : undefined,
+    labels: { empty: messages.value.empty, emptyCell: messages.value.emptyCell, of: messages.value.of, overLimit: messages.value.overLimit, underMinimum: messages.value.underMinimum },
+    // currentColor or a colour function in these properties becomes the colour computed on the board.
+    ...withExportColours(root.value, resolve => ({ wipWarningColor: resolve(read('--vw-board-wip-warning')), wipUnderColor: resolve(read('--vw-board-wip-under')) })),
+    direction: isRtl() ? 'rtl' : 'ltr',
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: TaskBoardPngExportOptions<C> = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+
 defineExpose({
   /** Move the keyboard focus to a card. Returns false when the card is not shown. */
   focusCard,
   /** Cancel a pick-up or drag in progress, reporting `card-move-cancel` with reason `api`. */
   cancelMove: () => cancelMove('api'),
+  /** A standalone SVG document of the board; see `TaskBoardExportOptions`. */
+  exportSvg,
+  /** A PNG blob of `exportSvg(options)` at `scale` device pixels per CSS pixel. Browser only. */
+  exportPng,
 })
 </script>
 
@@ -512,7 +553,10 @@ defineExpose({
             'vw-is-over-limit': item.status.overLimit, 'vw-is-at-limit': item.status.atLimit,
             'vw-is-under-minimum': item.status.underMinimum, 'vw-is-collapsed': item.collapsed,
           }">
-          <slot name="column-header" :column="item.column" :status="item.status">
+          <slot
+            name="column-header" :column="item.column" :status="item.status" :collapsed="item.collapsed"
+            :toggle="() => toggleColumn(item.column.id)" :toggleLabel="item.toggleName"
+          >
             <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!item.collapsed"
               :aria-label="item.toggleName" :aria-describedby="item.descriptionId" @click="toggleColumn(item.column.id)">
               <span class="vw-board-toggle-icon" aria-hidden="true"></span>

@@ -4,7 +4,7 @@
 // deletes and moves are proposals that this parent applies to one history entry each (undo and redo below). An
 // "Archived products" group loads its children on demand. Selection links to a NetworkGraph of categories and suppliers
 // through entities (`useLinkedSelection().selectEntities`): the same supplier is one entity in many cells.
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, useTemplateRef } from 'vue'
 import {
   NetworkGraph, TreeGrid, applyTreeGridEdits, deleteTreeGridRows, insertTreeGridRow, matchTreeGridEntities, moveTimelineRow,
   useEditHistory, useLinkedSelection,
@@ -13,6 +13,8 @@ import {
   type TreeGridRowCreate, type TreeGridRowDelete, type TreeGridSheetEdit, type ViewBinding, type ViewTargetEvent,
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
+import { download } from './download'
+import TreeGridColumnsDemo from './TreeGridColumnsDemo.vue'
 import StatusLine from './components/StatusLine.vue'
 import { useDemoLocale } from './i18n'
 
@@ -233,6 +235,13 @@ const selectionText = computed(() => {
     : t({ en: 'Nothing linked.', ja: '連動しているものはありません。' })
 })
 const rtl = ref(false)
+const grid = useTemplateRef('grid')
+function exportSvg() {
+  const svg = grid.value?.exportSvg({ title: t({ en: 'Product matrix', ja: '製品マトリクス' }) })
+  if (!svg) return
+  download(svg, 'product-matrix.svg')
+  status.value = t({ en: `Exported SVG (${svg.length} characters).`, ja: `SVG を出力しました(${svg.length} 文字)。` })
+}
 </script>
 
 <template>
@@ -242,8 +251,9 @@ const rtl = ref(false)
       <button type="button" :disabled="!history.canRedo.value" @click="history.redo()">{{ t({ en: 'Redo', ja: 'やり直す' }) }}</button>
       <label><input v-model="failNextLoad" type="checkbox"> {{ t({ en: 'Fail next load', ja: '次の読み込みを失敗させる' }) }}</label>
       <label><input v-model="rtl" type="checkbox"> {{ t({ en: 'Right to left', ja: '右から左' }) }}</label>
+      <button type="button" @click="exportSvg">{{ t({ en: 'Export SVG', ja: 'SVG で出力' }) }}</button>
     </template>
-    <TreeGrid v-model:expanded-ids="expandedIds" v-model:active-cell="activeCell" :rows="gridRows" :columns="columns" :cells="cells"
+    <TreeGrid ref="grid" v-model:expanded-ids="expandedIds" v-model:active-cell="activeCell" :rows="gridRows" :columns="columns" :cells="cells"
       missing-cell="unknown" :height="420" :tree-column-width="260" :dir="rtl ? 'rtl' : 'ltr'" editable spreadsheet rows-editable
       :selected-row-ids="gridSelection" :highlighted-row-ids="highlightedRowIds" :highlighted-cells="matches.cells"
       :validate-cell-edit="validateCellEdit" :validate-row-delete="validateRowDelete" :validate-row-move="validateRowMove"
@@ -259,4 +269,6 @@ const rtl = ref(false)
       :labels="{ ...labels.graph, region: t({ en: 'Categories and suppliers', ja: 'カテゴリーと仕入先' }) }" @target-activate="activateInGraph"
       @background-click="clearSelection" @idle-escape="clearSelection" />
   </DemoPanel>
+  <!-- The opt-in header controls (column widths, sorting and filtering) on a smaller grid. -->
+  <TreeGridColumnsDemo />
 </template>

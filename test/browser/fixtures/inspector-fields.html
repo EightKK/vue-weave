@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Property inspector field kinds fixture</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/inspector-fields-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/inspector-fields-test/vue.js", "@eightkk/vue-weave": "/inspector-fields-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { PropertyInspector } from '@eightkk/vue-weave'
+
+      // PropertyInspector with one field of each kind for one item. The parent applies every `change` unless the query
+      // has `ignore`. validateChange refuses the name "Reserved" with a reason, a count of 7 with false and a count of 8
+      // with a blank reason. Events are logged as JSON lines to the "Events" status. Query parameters: rtl, ignore.
+      // Buttons call the exposed focusField and cancelEdits, replace the item with another one and change a value remotely.
+      const query = new URLSearchParams(location.search)
+      const hour = 3_600_000
+      const first = { id: 'one', name: 'Weld', code: 'W-1', count: 3, start: Date.UTC(2026, 10, 11, 9, 0), effort: 2 * hour, state: 'open', tags: ['a'], done: false, accent: '#336699', note: 'hi' }
+      const item = shallowRef(first)
+      const fields = [
+        { id: 'code', kind: 'text', label: 'Code', get: i => i.code, readonly: true },
+        { id: 'name', kind: 'text', label: 'Name', get: i => i.name, required: true, description: 'Shown in lists', placeholder: 'A name' },
+        { id: 'count', kind: 'number', label: 'Count', get: i => i.count, integer: true, min: 0, max: 10 },
+        { id: 'start', kind: 'time', label: 'Start', get: i => i.start, utcOffsetMinutes: 0 },
+        { id: 'effort', kind: 'duration', label: 'Effort', get: i => i.effort, unitSize: hour, unitLabel: 'h' },
+        { id: 'state', kind: 'select', label: 'State', get: i => i.state, choices: [{ value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' }] },
+        { id: 'tags', kind: 'select', label: 'Tags', multiple: true, get: i => i.tags, choices: [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }, { value: 'c', label: 'Gamma' }] },
+        { id: 'done', kind: 'checkbox', label: 'Done', get: i => i.done },
+        { id: 'accent', kind: 'color', label: 'Accent', get: i => i.accent },
+        { id: 'lockedState', kind: 'select', label: 'Locked state', readonly: true, get: i => i.state, choices: [{ value: 'open', label: 'Open' }] },
+        { id: 'lockedDone', kind: 'checkbox', label: 'Locked done', readonly: true, get: i => i.done },
+        { id: 'note', kind: 'text', label: 'Note', get: i => i.note },
+      ]
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+      function validateChange(change) {
+        if (change.field === 'name' && change.after === 'Reserved') return 'Reserved is taken.'
+        if (change.field === 'count' && change.after === 7) return false
+        if (change.field === 'count' && change.after === 8) return '   '
+      }
+
+      createApp({
+        setup() {
+          const inspector = ref()
+          const control = (label, action) => h('button', { type: 'button', onClick: action }, label)
+          // Escape pressed in a field with a draft or a message is handled there and does not reach this element.
+          return () => h('main', { style: 'width: 380px; padding: 12px', onKeydown: event => { if (event.key === 'Escape') record('escape-reached') } }, [
+            h('div', { style: 'display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px' }, [
+              ...['name', 'count', 'state', 'code', 'missing'].map(id => control('Focus ' + id, () => record('focus', id, inspector.value.focusField(id)))),
+              control('Cancel edits', () => inspector.value.cancelEdits()),
+              control('Other item', () => { item.value = { ...first, id: 'two', name: 'Cut' } }),
+              control('Rename remotely', () => { item.value = { ...item.value, name: 'Remote' } }),
+              control('Clear item', () => { item.value = null }),
+            ]),
+            h(PropertyInspector, {
+              ref: inspector, item: item.value, fields, validateChange, dir: query.has('rtl') ? 'rtl' : 'ltr',
+              labels: { region: 'Item properties', none: '(nothing)', rejected: 'Not allowed.', empty: 'No item.' },
+              onChange: change => {
+                record('change', change)
+                if (!query.has('ignore')) item.value = { ...item.value, [change.field]: change.after }
+              },
+              onChangeRejected: (change, reason) => record('change-rejected', change.field, reason),
+            }, {
+              'field-note': slot => h('div', { class: 'custom-note' }, [
+                h('input', { id: slot.inputId, 'aria-describedby': slot.describedBy, value: slot.text, readonly: slot.readonly, 'data-error': slot.error ?? '' }),
+                h('button', { type: 'button', onClick: () => record('commit', slot.commit('Committed')) }, 'Commit note'),
+                h('button', { type: 'button', onClick: () => record('commitText', slot.commitText('Typed')) }, 'Commit note text'),
+                h('button', { type: 'button', onClick: () => record('cancel', slot.cancel()) }, 'Cancel note'),
+              ]),
+            }),
+            h('pre', { role: 'status', 'aria-label': 'Events' }, log.value.join('\n')),
+          ])
+        },
+      }).mount('#app')
+    </script>
+  </body>
+</html>

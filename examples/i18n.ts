@@ -108,6 +108,9 @@ const japanese: ComponentLabels = Object.freeze({
     moveBefore: 'の前へ', moveAfter: 'の後へ', moveInto: 'の中へ',
     rowCreateRejected: '新しい行は却下されました。', rowDeleteRejected: 'この削除は却下されました。', rowMoveRejected: 'この行の移動は却下されました。',
     rowMoveHint: 'Alt+上下キーで行を移動、Alt+Shift+矢印でインデント・アウトデントします。Ctrl+Enter で下に行を、Ctrl+Shift+Enter で子の行を追加し、Delete で行を削除します。',
+    resizeColumn: '列幅を変更', columnResizeRejected: 'この列幅の変更は却下されました。',
+    sortBy: '並べ替え:', sortedAscending: '昇順', sortedDescending: '降順', filterBy: '絞り込み', filtered: '絞り込み中',
+    filterContains: '含む文字', filterValues: '表示する値', clearFilter: '絞り込みを解除',
   },
   taskBoard: {
     region: 'タスクボード', empty: '表示する列がありません', emptyCell: 'カードなし', card: '枚', cards: '枚', wipLimit: 'WIP 上限',
@@ -123,7 +126,8 @@ const japanese: ComponentLabels = Object.freeze({
     dayEditHint: '左右の矢印キーで予定を1日ずつ移動し、Shift で終了を伸縮します。Escape でドラッグを取り消します。',
     monthEditHint: '左右の矢印キーで1日、上下キーで1週ずつ移動し、Shift+左右で終日予定の終了を伸縮します。Escape でドラッグを取り消します。',
     rejected: 'この変更は却下されました。', createRejected: 'この新しい予定は却下されました。',
-    resources: '資源', now: '現在', empty: '表示する予定がありません', recurring: '繰り返し',
+    resources: '資源', now: '現在', empty: '表示する予定がありません', recurring: '繰り返し', agenda: '予定リスト',
+    agendaEditHint: '上下の矢印キーで予定の間を移動します。左右キーで予定を1日ずつ移動し、Shift+左右で終日予定の終了を伸縮します。',
   },
   palette: { region: '図形パレット', search: '図形を絞り込む', noMatches: '一致する図形がありません。' },
   inspector: {

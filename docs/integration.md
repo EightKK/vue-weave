@@ -342,7 +342,7 @@ The opt-in TaskBoard component (`vw-board`) reuses the theme variables (`--vw-su
 | `--vw-board-collapsed-fill` | border colour at 35% | Fill of the cells below a collapsed column |
 | `--vw-board-drop` | `--vw-accent` (`#245e96`, dark `#82badf`) | Drop indicator, outline of the target cell and of a picked-up card |
 
-The opt-in TreeGrid component (`vw-tree-grid`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-border`, `--vw-grid`, `--vw-text`, `--vw-muted`, `--vw-accent`, `--vw-on-solid` and the tone families through `vw-tone-*` on cells with a `tone`), so the built-in dark themes and your own theme apply to it. Rows and cells are positioned with logical properties, so `dir="rtl"` puts the tree column on the right without extra rules. Its classes start with `vw-tree-grid-` (`vw-tree-grid-row`, `vw-tree-grid-header-cell`, `vw-tree-grid-cell`, `vw-tree-grid-editor`, `vw-tree-grid-fill-handle`, `vw-tree-grid-drop`), with the shared modifiers `vw-is-selected`, `vw-is-highlighted`, `vw-is-active`, `vw-is-editing`, `vw-is-in-range`, `vw-is-status` (a status line) and `vw-is-<state>` on cells without a value (`vw-is-none`, `vw-is-unknown`, `vw-is-not-applicable`, `vw-is-loading`, ...). In forced-colors mode the focus and range use `Highlight`, selected rows `Highlight` with `HighlightText`, and highlights a dashed `CanvasText` outline. In print the scroller grows to its content, but only the rendered window of lines and columns is in the DOM; use a dedicated export for complete output. It adds these variables; the built-in dark themes set `--vw-tree-grid-highlight` to `#f0a060`, `--vw-tree-grid-selected` to `#243e58` and `--vw-tree-grid-error` to `#ff8a80`.
+The opt-in TreeGrid component (`vw-tree-grid`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-border`, `--vw-grid`, `--vw-text`, `--vw-muted`, `--vw-accent`, `--vw-on-solid` and the tone families through `vw-tone-*` on cells with a `tone`), so the built-in dark themes and your own theme apply to it. Rows and cells are positioned with logical properties, so `dir="rtl"` puts the tree column on the right without extra rules. Its classes start with `vw-tree-grid-` (`vw-tree-grid-row`, `vw-tree-grid-header-cell`, `vw-tree-grid-cell`, `vw-tree-grid-editor`, `vw-tree-grid-fill-handle`, `vw-tree-grid-drop`), with the shared modifiers `vw-is-selected`, `vw-is-highlighted`, `vw-is-active`, `vw-is-editing`, `vw-is-in-range`, `vw-is-status` (a status line) and `vw-is-<state>` on cells without a value (`vw-is-none`, `vw-is-unknown`, `vw-is-not-applicable`, `vw-is-loading`, ...). In forced-colors mode the focus and range use `Highlight`, selected rows `Highlight` with `HighlightText`, and highlights a dashed `CanvasText` outline. In print the scroller grows to its content, but only the rendered window of lines and columns is in the DOM; use `exportSvg` or `exportPng` (or `renderTreeGridSvg`) for complete output. It adds these variables; the built-in dark themes set `--vw-tree-grid-highlight` to `#f0a060`, `--vw-tree-grid-selected` to `#243e58` and `--vw-tree-grid-error` to `#ff8a80`.
 
 | Variable | Default | Used for |
 | --- | --- | --- |
@@ -592,7 +592,7 @@ A fully collapsed interval is not invertible and needs a separately defined edit
 
 ## Reusing calculations
 
-Use the core entry in a worker or server to compute layouts, transform times or validate input. NetworkGraph's `layout` callback is synchronous. For an asynchronously computed layout, use `useAsyncGraphLayout` (see [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)), or store the result in application state yourself and supply a synchronous callback that returns it. Either way, update data and matching geometry together.
+Use the core entry in a worker or server to compute layouts, transform times or validate input (see [Running core calculations in a Worker](#running-core-calculations-in-a-worker)). NetworkGraph's `layout` callback is synchronous. For an asynchronously computed layout, use `useAsyncGraphLayout` (see [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)), or store the result in application state yourself and supply a synchronous callback that returns it. Either way, update data and matching geometry together.
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
 
@@ -902,7 +902,7 @@ A Mermaid file has no coordinates, so NetworkGraph lays it out; use the returned
 
 ## Export to SVG and PNG
 
-Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
+Call `exportSvg` or `exportPng` on a NetworkGraph, GanttChart, TaskBoard, EventCalendar or TreeGrid ref to save the whole chart, board, calendar view or grid, independent of scrolling, zoom, culling or row virtualization. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
 
 ```ts
 const svg = timeline.value!.exportSvg({ title: 'Production plan' })
@@ -912,9 +912,9 @@ Object.assign(document.createElement('a'), { href: url, download: 'plan.png' }).
 URL.revokeObjectURL(url)
 ```
 
-The export reads the `--vw-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail` or `edgeLabel` when your slots change text. Fonts are not embedded; a viewer without the font uses a fallback.
+The export reads the `--vw-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail`, `edgeLabel`, `cardLabel`, `cardDetail` or `eventLabel` when your slots change text. TaskBoard also reads `--vw-board-wip-warning` and `--vw-board-wip-under`, and TreeGrid `--vw-tree-grid-indent`, `--vw-tree-grid-selected` and `--vw-tree-grid-highlight`; a `failed` cell mark uses the `critical` theme colour. Fonts are not embedded; a viewer without the font uses a fallback.
 
-To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `@eightkk/vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
+To render on a server or in a worker, call `renderGraphSvg`, `renderTimelineSvg`, `renderTaskBoardSvg`, `renderEventCalendarSvg` or `renderTreeGridSvg` from `@eightkk/vue-weave/core` with the same data (a layout or `TimeScale` for the first two) and an explicit theme. EventCalendar exports every view, `agenda` included (pass `agendaDays` as on the component). Before mounting, as on a server, the component `exportSvg` methods use the default theme and font, and `exportPng` rejects. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange`, `rowRange` or `columnRange` slice, or lower `scale`, for bigger charts and grids.
 
 <!-- #endregion export -->
 
@@ -1043,6 +1043,123 @@ const svg = renderGraphSvg(routed, nodes, edges, { theme })
 ```
 
 `renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.
+
+### Running core calculations in a Worker
+
+`useAsyncGraphLayout` with `graphLayoutWorkerAdapter` is the way to lay out NetworkGraph's graphs in a Worker: it keys, cancels and orders the requests and holds results during gestures. Its Worker only has to answer the messages described above, for example with the built-in layered layout:
+
+```ts
+// graphLayout.worker.ts: answers graphLayoutWorkerAdapter with the built-in layered layout.
+import { layoutLayeredGraph, parseGraphLayoutMessage } from '@eightkk/vue-weave/core'
+
+self.onmessage = (event: MessageEvent) => {
+  const message = parseGraphLayoutMessage(event.data)
+  // A synchronous engine cannot stop a layout it is computing; the adapter discards the result of a cancelled request.
+  if (message.type !== 'request') return
+  const { requestId, inputKey, scope, nodes, edges, direction } = message.request
+  try {
+    self.postMessage({ type: 'success', requestId, inputKey, scope, layout: layoutLayeredGraph(nodes, edges, { direction }) })
+  } catch (error) {
+    self.postMessage({ type: 'failure', requestId, inputKey, scope, message: error instanceof Error ? error.message : String(error) })
+  }
+}
+```
+
+Other heavy core calculations, such as routing a large graph for a custom renderer or an export, `scheduleTasks` and `levelResources`, run in a plain module Worker the same way. Everything they take and return is structured-cloneable: plain objects and arrays, and the Maps of a `GraphLayout`. Three things are not. Functions (a NetworkGraph `layout` callback, `formatTime`, or a function in node `data`) cannot be posted; leave them out of the message. Vue's reactive proxies cannot be cloned either; post `toRaw(nodes.value)` or a plain copy. A `GraphRouteCache` stays in the Worker that created it. Results lose no data in the clone, but a layout routed on one side and routed again on the other with `policy: 'preserve'` no longer knows which of its paths the built-in router drew, so run that whole chain (`applyGraphPositions`, `routeGraphPorts`, `routeGraphEdges`) in one place.
+
+```ts
+// heavy.worker.ts: a module Worker for the core's heavy calculations.
+import {
+  createGraphRouteCache, layoutLayeredGraph, levelResources, routeGraphEdges, routeGraphPorts, scheduleTasks,
+  type GraphEdge, type GraphEdgeRouteOptions, type GraphLayoutDirection, type LevelResourcesInput, type NetworkNode,
+  type ScheduleInput,
+} from '@eightkk/vue-weave/core'
+
+export type Job =
+  | { kind: 'graph'; input: { nodes: NetworkNode[]; edges: GraphEdge[]; direction?: GraphLayoutDirection; routing?: GraphEdgeRouteOptions } }
+  | { kind: 'schedule'; input: ScheduleInput }
+  | { kind: 'level'; input: LevelResourcesInput }
+
+// Route caches cannot be cloned, so the worker keeps its own: each graph job reuses the routes the previous one drew
+// where nothing that affects them changed.
+const routes = createGraphRouteCache()
+
+function compute(job: Job) {
+  switch (job.kind) {
+    case 'graph': {
+      const { nodes, edges, direction = 'LR', routing } = job.input
+      const nodesById = new Map(nodes.map(node => [node.id, node]))
+      const layout = layoutLayeredGraph(nodes, edges, { direction })
+      const ported = routeGraphPorts(layout, nodesById, edges, direction)
+      return routeGraphEdges(ported, edges, nodesById, { ...routing, direction, cache: routes })
+    }
+    case 'schedule': return scheduleTasks(job.input)
+    case 'level': return levelResources(job.input)
+  }
+}
+
+// The newest job of each kind. Jobs run after the messages already queued have arrived, so a burst of edits computes
+// only its last input; the jobs it replaced are answered as stale.
+const waiting = new Map<Job['kind'], { id: number; job: Job }>()
+
+self.onmessage = (event: MessageEvent<{ id: number; job: Job }>) => {
+  const { id, job } = event.data
+  const replaced = waiting.get(job.kind)
+  if (replaced) self.postMessage({ id: replaced.id, stale: true })
+  waiting.set(job.kind, { id, job })
+  setTimeout(runWaiting)
+}
+
+function runWaiting() {
+  for (const [kind, { id, job }] of waiting) {
+    waiting.delete(kind)
+    try {
+      self.postMessage({ id, result: compute(job) })
+    } catch (error) {
+      self.postMessage({ id, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+}
+```
+
+A Worker answers one message at a time and cannot stop a calculation once it has started. The Worker above therefore keeps only the newest job of each kind while messages are still queued, and the main thread ignores any answer that a newer job of the same kind has replaced, so a slow result never overwrites a newer one:
+
+```ts
+// heavyWork.ts: the main-thread side. `run` resolves to the result, or to undefined when a newer job of the same kind
+// was sent before the result arrived, so a late answer never overwrites a newer one.
+import type { Job } from './heavy.worker'
+
+type Reply = { id: number; result?: unknown; stale?: true; error?: string }
+
+export function heavyWork(worker: Pick<Worker, 'postMessage' | 'addEventListener'>) {
+  let lastId = 0
+  const newest = new Map<Job['kind'], number>()
+  const pending = new Map<number, { kind: Job['kind']; resolve: (value: unknown) => void; reject: (error: Error) => void }>()
+  worker.addEventListener('message', (event: MessageEvent<Reply>) => {
+    const reply = event.data, request = pending.get(reply.id)
+    if (!request) return
+    pending.delete(reply.id)
+    if (reply.error !== undefined) request.reject(new Error(reply.error))
+    else request.resolve(reply.stale || newest.get(request.kind) !== reply.id ? undefined : reply.result)
+  })
+  return function run(job: Job): Promise<unknown> {
+    const id = ++lastId
+    newest.set(job.kind, id)
+    const answer = new Promise<unknown>((resolve, reject) => pending.set(id, { kind: job.kind, resolve, reject }))
+    worker.postMessage({ id, job })
+    return answer
+  }
+}
+```
+
+```ts
+const worker = new Worker(new URL('./heavy.worker.ts', import.meta.url), { type: 'module' })
+const run = heavyWork(worker)
+const result = await run({ kind: 'schedule', input: toRaw(plan.value) })
+if (result) schedule.value = result as ScheduleResult
+```
+
+To abandon a long job, terminate the Worker and start a new one (its route cache starts empty again). A routed layout from the Worker is ready for `renderGraphSvg` or a custom renderer; for NetworkGraph, pass node boxes through `useAsyncGraphLayout` instead, since the component routes edges itself.
 
 <!-- #endregion async-layouts -->
 

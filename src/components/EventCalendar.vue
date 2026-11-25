@@ -1,10 +1,11 @@
-<script setup lang="ts" generic="E extends CalendarEvent = CalendarEvent">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
+<script setup lang="ts" generic="E extends CalendarEvent = CalendarEvent, V extends EventCalendarViewName = EventCalendarView">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch, type Ref } from 'vue'
 import {
-  eventCalendarDays, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarDayEvents, packCalendarEventLanes,
-  shiftEventCalendarDate, validateCalendarEvents, type CalendarEvent, type EventCalendarBackgroundClick, type CalendarResource, type EventCalendarCreate,
+  eventCalendarDays, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarAgenda, layoutCalendarDayEvents,
+  packCalendarEventLanes, shiftEventCalendarDate, validateCalendarEvents, type CalendarAgendaItem, type CalendarEvent, type EventCalendarBackgroundClick, type CalendarResource, type EventCalendarCreate,
   type EventCalendarCreateValidator, type EventCalendarDay, type EventCalendarEdit, type EventCalendarEditCancel,
   type EventCalendarEditCancelReason, type EventCalendarEditValidator, type EventCalendarLabels, type EventCalendarView,
+  type EventCalendarViewName,
 } from '../core/eventCalendar.js'
 import { intlTimeFormatter } from '../core/calendarFormat.js'
 import { cachedDateFormat, zoneFormat } from '../core/timeZone.js'
@@ -13,6 +14,8 @@ import type { ChartDirection } from '../core/types.js'
 import { elementWithData, usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
+import { renderEventCalendarSvgWithColors, type EventCalendarExportOptions, type EventCalendarPngExportOptions } from '../core/exportCalendarSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 
 const minute = 60_000
 const hour = 3_600_000
@@ -26,14 +29,29 @@ const lanePadding = 6
 const monthHeader = 26
 /** Time in milliseconds a drag must rest near the top or bottom of the time grid before it scrolls. */
 const edgeScrollDelay = 250
+/** Time in milliseconds a touch must rest on empty calendar space before it drags to create instead of scrolling. */
+const longPressDelay = 500
+/** Largest distance in pixels from a resizable edge of an event at which a touch grabs the edge instead of the event. */
+const touchHandleReach = 14
+const defaultViews: readonly EventCalendarView[] = ['day', 'week', 'month']
 
 const props = withDefaults(defineProps<{
   /** Events by ID with a half-open `[start, end)` interval in epoch milliseconds. Required. */
   events: readonly E[]
   /** Anchor date of the view (epoch milliseconds); the view shows its day, week or month. Supports `v-model:date`. Required. */
   date: number
-  /** `day`, `week` or `month`. Supports `v-model:view`. Default `week`. */
-  view?: EventCalendarView
+  /**
+   * `day`, `week`, `month` or `agenda` (opt-in). Supports `v-model:view`. Default `week`. A calendar whose `view` or
+   * `views` can be `agenda` (`V`, inferred from them) emits and passes `EventCalendarViewName`; others `EventCalendarView`.
+   */
+  view?: EventCalendarView | V
+  /** The views the built-in view switch offers, in order. Default `['day', 'week', 'month']`; add `agenda` to offer the agenda. */
+  views?: readonly (EventCalendarView | V)[]
+  /**
+   * Length of the `agenda` view in days, an integer from 1 to 366: that many days from the day of `date`, stepped by
+   * that many days. Default: the week that contains `date`, like the `week` view.
+   */
+  agendaDays?: number
   /** First day of a week, 0 = Sunday to 6 = Saturday. Default 1 (Monday). */
   weekStartsOn?: number
   /** IANA time zone of the days, hours and labels. Default `UTC`. */
@@ -45,7 +63,7 @@ const props = withDefaults(defineProps<{
   dayEnd?: number
   /** Height of one hour of the time grid in pixels. Default 48. */
   hourHeight?: number
-  /** Height of the scrolling time grid, in pixels or a CSS length. Default 480. */
+  /** Height of the scrolling time grid, and the largest height of the agenda list, in pixels or a CSS length. Default 480. */
   height?: number | string
   /** Step of pointer and keyboard edits of timed events, in minutes. Default 15. */
   snap?: number
@@ -77,6 +95,7 @@ const props = withDefaults(defineProps<{
   dir?: ChartDirection
 }>(), {
   view: undefined,
+  views: () => ['day', 'week', 'month'],
   weekStartsOn: 1,
   timeZone: 'UTC',
   locale: 'en-US',
@@ -94,9 +113,9 @@ const emit = defineEmits<{
   /** Navigation by the toolbar or a month day button; supports `v-model:date`. */
   'update:date': [date: number]
   /** The view switch or a month day button; supports `v-model:view`. */
-  'update:view': [view: EventCalendarView]
+  'update:view': [view: EventCalendarView | V]
   /** The visible range changed (and once after mounting): load the events that overlap it. */
-  'range-change': [range: TimeRange, view: EventCalendarView]
+  'range-change': [range: TimeRange, view: EventCalendarView | V]
   /** An event was selected by click, Enter or Space. */
   select: [id: string]
   /** The selected event changed; supports `v-model:selected-id`. */
@@ -124,12 +143,12 @@ const emit = defineEmits<{
 }>()
 
 defineSlots<{
-  /** Content of an event button. Use non-interactive content. */
-  event(props: { event: E; range: TimeRange; selected: boolean; allDay: boolean; view: EventCalendarView }): unknown
+  /** Content of an event button (in the agenda, after the time). Use non-interactive content. */
+  event(props: { event: E; range: TimeRange; selected: boolean; allDay: boolean; view: EventCalendarView | V }): unknown
   /** Replaces the content of the toolbar. */
   toolbar(props: {
-    title: string; view: EventCalendarView; date: number
-    previous: () => void; next: () => void; today: () => void; setView: (view: EventCalendarView) => void
+    title: string; view: EventCalendarView | V; date: number
+    previous: () => void; next: () => void; today: () => void; setView: (view: EventCalendarView | V) => void
   }): unknown
   empty(): unknown
 }>()
@@ -142,12 +161,14 @@ const messages = computed<EventCalendarLabels>(() => ({
   // A localized `dayEditHint` without `monthEditHint` keeps the month view localized.
   monthEditHint: props.labels?.dayEditHint ?? 'Left and Right arrows move the event by a day, Up and Down by a week, and Shift with Left or Right resizes the end of an all-day event. Escape cancels a drag.',
   rejected: 'This change was rejected.', createRejected: 'This new event was rejected.',
-  resources: 'Resources', now: 'Now', empty: 'No events to display', recurring: 'Recurring',
+  resources: 'Resources', now: 'Now', empty: 'No events to display', recurring: 'Recurring', agenda: 'Agenda',
+  // Like `monthEditHint`, a localized `dayEditHint` without `agendaEditHint` keeps the agenda localized.
+  agendaEditHint: props.labels?.dayEditHint ?? 'Up and Down arrows move between events. Left and Right arrows move the event by a day, and Shift with Left or Right resizes the end of an all-day event.',
   ...props.labels,
 }))
 
 // View, date and selection are controlled but keep local state, so a calendar without v-model still navigates.
-const localView = ref<EventCalendarView>(props.view ?? 'week')
+const localView = ref<EventCalendarView | V>(props.view ?? 'week') as Ref<EventCalendarView | V>
 const localDate = ref(props.date)
 const localSelected = ref(props.selectedId)
 watch(() => props.view, view => { if (view !== undefined) localView.value = view })
@@ -162,7 +183,12 @@ const scroller = ref<HTMLElement>()
 
 function checkProps() {
   validateCalendarEvents(props.events, props.resources)
-  if (!['day', 'week', 'month'].includes(view.value)) throw new RangeError('Unknown event calendar view: ' + String(view.value))
+  if (!['day', 'week', 'month', 'agenda'].includes(view.value)) throw new RangeError('Unknown event calendar view: ' + String(view.value))
+  if (!Array.isArray(props.views as unknown) || new Set(props.views).size !== props.views.length) throw new RangeError('views must be an array of distinct views')
+  for (const item of props.views) if (!['day', 'week', 'month', 'agenda'].includes(item)) throw new RangeError('Unknown event calendar view: ' + String(item))
+  if (props.agendaDays !== undefined && (!Number.isInteger(props.agendaDays) || props.agendaDays < 1 || props.agendaDays > 366)) {
+    throw new RangeError('agendaDays must be an integer from 1 to 366')
+  }
   if (typeof localDate.value !== 'number' || !Number.isFinite(localDate.value)) throw new RangeError('date must be finite')
   if (!Number.isInteger(props.weekStartsOn) || props.weekStartsOn < 0 || props.weekStartsOn > 6) throw new RangeError('weekStartsOn must be 0 to 6')
   zoneFormat(props.timeZone)
@@ -192,11 +218,11 @@ const { error: validationError } = useValidatedSource([
   () => props.events, () => props.resources, view, localDate, () => props.weekStartsOn, () => props.timeZone, () => props.dayStart,
   () => props.dayEnd, () => props.hourHeight, () => props.snap, () => props.createDuration, () => props.maxMonthLanes, () => props.now,
   // By value, so a locale array written inline does not validate again on every render of the parent.
-  () => JSON.stringify(props.locale), () => props.height, () => props.dir,
+  () => JSON.stringify(props.locale), () => props.height, () => props.dir, () => JSON.stringify(props.views), () => props.agendaDays,
 ], checkProps, { report: error => emit('validation-error', error), fallback: undefined })
 const valid = computed(() => validationError.value === undefined)
 
-const options = computed(() => ({ timeZone: props.timeZone, weekStartsOn: props.weekStartsOn }))
+const options = computed(() => ({ timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, agendaDays: props.agendaDays }))
 const snapMs = computed(() => props.snap * minute)
 const createMs = computed(() => (props.createDuration ?? 4 * props.snap) * minute)
 const rangeOf = (event: E): TimeRange => ({ start: event.start, end: event.end })
@@ -224,7 +250,7 @@ const visibleRange = computed<TimeRange | undefined>(() => valid.value ? eventCa
 const title = computed(() => {
   const days = visibleDays.value
   if (!days.length) return ''
-  if (view.value === 'day') return longDate.value.format(days[0]!.start)
+  if (view.value === 'day' || days.length === 1) return longDate.value.format(days[0]!.start)
   if (view.value === 'month') return dateFormat({ year: 'numeric', month: 'long' }).format(localDate.value)
   return dateFormat({ year: 'numeric', month: 'short', day: 'numeric' }).formatRange(days[0]!.start, days[days.length - 1]!.start)
 })
@@ -251,7 +277,7 @@ function eventName(event: E) {
 interface GridColumn { key: string; day: EventCalendarDay; resourceId?: string; label: string; detail?: string }
 const resourceMode = computed(() => view.value === 'day' && Boolean(props.resources?.length))
 const columns = computed<GridColumn[]>(() => {
-  if (view.value === 'month' || !visibleDays.value.length) return []
+  if (view.value === 'month' || view.value === 'agenda' || !visibleDays.value.length) return []
   const day = visibleDays.value[0]!
   if (resourceMode.value) return props.resources!.map(resource => ({ key: resource.id, day, resourceId: resource.id, label: resource.label, detail: resource.detail }))
   return visibleDays.value.map(entry => ({ key: String(entry.start), day: entry, label: shortDate.value.format(entry.start) }))
@@ -369,7 +395,7 @@ function packRow(events: readonly E[], from: number, count: number, offset = 0, 
   }
 }
 const allDayRow = computed(() => {
-  if (view.value === 'month' || !columns.value.length) return { lanes: 0, segments: [] as DaySegment[] }
+  if (!columns.value.length) return { lanes: 0, segments: [] as DaySegment[] }
   const events = props.events.filter(inAllDayRow)
   if (!resourceMode.value) {
     const row = packRow(events, 0, columns.value.length)
@@ -409,13 +435,37 @@ const monthRowHeight = computed(() => monthHeader + props.maxMonthLanes * laneHe
 const allDayHeight = computed(() => Math.max(1, allDayRow.value.lanes) * laneHeight + lanePadding)
 const weekdayNames = computed(() => visibleDays.value.slice(0, 7).map(day => ({ key: day.weekday, label: weekdayName.value.format(day.start) })))
 
+// Agenda: the days of the range that have events, each with its events in order --------------------------------------
+interface AgendaEntry { key: string; event: E; item: CalendarAgendaItem; primary: boolean; time: string }
+interface AgendaGroup { key: string; id: string; day: EventCalendarDay; label: string; entries: AgendaEntry[] }
+const agendaGroups = computed<AgendaGroup[]>(() => {
+  if (view.value !== 'agenda' || !visibleDays.value.length) return []
+  const byId = new Map(props.events.map(event => [event.id, event]))
+  const groups = layoutCalendarAgenda(props.events, visibleDays.value).filter(entry => entry.items.length).map(entry => {
+    const day = visibleDays.value[entry.index]!
+    return {
+      key: String(day.start), id: `${uid}-agenda-${entry.index}`, day, label: longDate.value.format(day.start),
+      // `primary` is assigned by markPrimary over all days.
+      entries: entry.items.map(item => ({ key: `${entry.index}:${item.id}`, event: byId.get(item.id)!, item, primary: false, time: agendaTime(item) })),
+    }
+  })
+  markPrimary(groups.flatMap(group => group.entries))
+  return groups
+})
+/** The time column of an agenda entry: "All day", a time range, or the open end of a part of a multi-day event. */
+function agendaTime(item: CalendarAgendaItem) {
+  if (item.allDay) return messages.value.allDay
+  if (item.start === item.end) return timeText.value(item.start)
+  return `${item.continuesBefore ? '' : timeText.value(item.start)}–${item.continuesAfter ? '' : timeText.value(item.end)}`
+}
+
 // Navigation ---------------------------------------------------------------------------------------------------------
 function setDate(date: number) {
   if (date === localDate.value) return
   localDate.value = date
   emit('update:date', date)
 }
-function setView(next: EventCalendarView) {
+function setView(next: EventCalendarView | V) {
   if (next === view.value) return
   localView.value = next
   emit('update:view', next)
@@ -427,7 +477,8 @@ function openDay(day: EventCalendarDay) {
   setDate(day.start)
   setView('day')
 }
-const viewNames = computed(() => (['day', 'week', 'month'] as const).map(id => ({ id, label: messages.value[id] })))
+const viewNames = computed(() => (Array.isArray(props.views as unknown) ? props.views : defaultViews)
+  .filter(id => (['day', 'week', 'month', 'agenda'] as unknown[]).includes(id)).map(id => ({ id, label: messages.value[id] ?? id })))
 const toolbarProps = computed(() => ({ title: title.value, view: view.value, date: localDate.value, previous, next, today, setView }))
 // The title is announced after navigation, so screen reader users hear where they are.
 watch(title, (text, before) => { if (before && text !== before) notice.value = text })
@@ -456,11 +507,17 @@ onMounted(() => {
 })
 
 // Selection ----------------------------------------------------------------------------------------------------------
-function select(event: E) {
+function select(event: E, click?: MouseEvent) {
   // The click that ends a drag, or a drag cancelled while the button was held, selects nothing.
   if (suppressClick) {
     suppressClick = false
     return
+  }
+  // The click of a touch tap that proposed a new event can land on the new event, drawn under the finger meanwhile; it
+  // selects nothing. A click from the keyboard (detail 0) still selects.
+  if (suppressTap) {
+    suppressTap = false
+    if (click && click.detail > 0) return
   }
   emit('select', event.id)
   if (localSelected.value !== event.id) {
@@ -505,7 +562,13 @@ function editOf(event: E, after: TimeRange, mode: EventCalendarEdit['mode'], sou
 type Area = 'grid' | 'days'
 interface Gesture {
   pointerId: number
+  pointerType: string
   kind: 'move' | 'start' | 'end' | 'create'
+  /**
+   * A touch create that waits for its long press: the touch may still turn into a scroll, which ends it silently. It
+   * shows no preview, and a tap (a release before the long press) still proposes an event.
+   */
+  pending?: boolean
   area: Area
   event?: E
   /** The column (grid) or cell (days) where the gesture started, and the one under the pointer. */
@@ -523,6 +586,12 @@ interface Gesture {
 }
 let gesture: Gesture | undefined
 let suppressClick = false
+let suppressTap = false
+let longPress: ReturnType<typeof setTimeout> | undefined
+function clearLongPress() {
+  if (longPress !== undefined) clearTimeout(longPress)
+  longPress = undefined
+}
 interface Preview { area: Area; range: TimeRange; index: number; label: string; eventId?: string }
 const preview = shallowRef<Preview>()
 
@@ -555,14 +624,33 @@ function offsetAt(index: number, y: number) {
 }
 const floorSnap = (offset: number) => Math.floor(offset / snapMs.value) * snapMs.value
 
+/**
+ * The resize handle of an event that a touch at the pointer grabs: the handles are a few pixels wide for a mouse, so a
+ * touch within `touchHandleReach` (at most a quarter of the event's size, at least the handle's) of a resizable edge
+ * resizes the event instead of moving it.
+ */
+function touchHandle(pointer: PointerEvent, element: Element): 'start' | 'end' | undefined {
+  const box = element.getBoundingClientRect()
+  for (const handle of element.querySelectorAll<HTMLElement>('.vw-calendar-handle')) {
+    const rect = handle.getBoundingClientRect()
+    const horizontal = handle.classList.contains('vw-is-horizontal'), start = handle.classList.contains('vw-is-start')
+    const reach = Math.max(horizontal ? rect.width : rect.height, Math.min(touchHandleReach, (horizontal ? box.width : box.height) / 4))
+    const distance = horizontal
+      ? (rect.left + rect.right < box.left + box.right ? pointer.clientX - box.left : box.right - pointer.clientX)
+      : (start ? pointer.clientY - box.top : box.bottom - pointer.clientY)
+    if (distance <= reach) return start ? 'start' : 'end'
+  }
+  return undefined
+}
 function startEdit(pointer: PointerEvent, event: E, area: Area, origin: number, kind: Gesture['kind']) {
   if (pointer.button !== 0 || gesture || !editable(event) || !valid.value) return
   if (kind !== 'move') pointer.stopPropagation()
   const element = pointer.currentTarget as Element
+  if (kind === 'move' && pointer.pointerType === 'touch') kind = touchHandle(pointer, element) ?? kind
   // A days-area drag counts whole cells from the cell under the pointer, wherever the event was grabbed.
   if (area === 'days') origin = indexAt(cellElements(), pointer.clientX, pointer.clientY, view.value !== 'month', origin)
   gesture = {
-    pointerId: pointer.pointerId, kind, area, event, origin, target: origin, x: pointer.clientX, y: pointer.clientY, started: false, element,
+    pointerId: pointer.pointerId, pointerType: pointer.pointerType, kind, area, event, origin, target: origin, x: pointer.clientX, y: pointer.clientY, started: false, element,
     clientX: pointer.clientX, clientY: pointer.clientY, downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
   }
   // Synthetic events without an active pointer cannot be captured; the gesture then follows bubbled events.
@@ -571,14 +659,33 @@ function startEdit(pointer: PointerEvent, event: E, area: Area, origin: number, 
 function startCreate(pointer: PointerEvent, area: Area, origin: number) {
   if (pointer.button !== 0 || gesture || props.readonly || !props.creatable || !valid.value) return
   if ((pointer.target as Element).closest('button')) return
-  pointer.preventDefault()
+  // A touch on empty space scrolls the calendar (or the page), so it creates by a tap, or by a drag after a long press.
+  const touch = pointer.pointerType === 'touch'
+  // Keep a mouse drag from selecting text.
+  if (!touch) pointer.preventDefault()
   const element = pointer.currentTarget as Element
-  gesture = {
-    pointerId: pointer.pointerId, kind: 'create', area, origin, target: origin, x: pointer.clientX, y: pointer.clientY, started: false, element,
+  const active: Gesture = gesture = {
+    pointerId: pointer.pointerId, pointerType: pointer.pointerType, kind: 'create', area, origin, target: origin, x: pointer.clientX, y: pointer.clientY,
+    started: false, element, pending: touch,
     clientX: pointer.clientX, clientY: pointer.clientY, downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
   }
   capturePointer(element, pointer.pointerId)
-  preview.value = createPreview(gesture)
+  if (!touch) {
+    preview.value = createPreview(active)
+    return
+  }
+  longPress = setTimeout(() => {
+    longPress = undefined
+    if (gesture !== active) return
+    active.pending = false
+    preview.value = createPreview(active)
+  }, longPressDelay)
+}
+/** End a touch create that moved before its long press: the touch scrolls, and no edit was shown, so nothing is reported. */
+function dropPendingTouch(active: Gesture) {
+  gesture = undefined
+  clearLongPress()
+  releasePointer(active.element, active.pointerId)
 }
 
 /**
@@ -662,6 +769,10 @@ function createPreview(active: Gesture): Preview {
 function movePointer(pointer: PointerEvent) {
   const active = gesture
   if (!active || pointer.pointerId !== active.pointerId) return
+  if (active.pending) {
+    if (pastThreshold(active, pointer)) dropPendingTouch(active)
+    return
+  }
   if (!active.started && !pastThreshold(active, pointer)) return
   active.started = true
   active.clientX = pointer.clientX
@@ -690,10 +801,12 @@ function finishPointer(pointer: PointerEvent) {
   const active = gesture
   if (!active || pointer.pointerId !== active.pointerId) return
   gesture = undefined
+  clearLongPress()
   preview.value = undefined
   edgeScroll.stop()
   releasePointer(active.element, active.pointerId)
   if (active.kind === 'create') {
+    if (pointer.pointerType !== 'mouse') suppressTap = true
     const result = gestureResult(active, pointer.clientX, pointer.clientY)
     proposeCreate({
       start: result.range.start, end: result.range.end, allDay: active.area === 'days', source: 'pointer',
@@ -720,7 +833,13 @@ function cancelPointer(pointer: PointerEvent) {
 function cancelGesture(reason: EventCalendarEditCancelReason) {
   const active = gesture
   if (!active) return false
+  if (active.pending && reason === 'pointer-cancel') {
+    // The touch became a scroll before its long press.
+    dropPendingTouch(active)
+    return false
+  }
   gesture = undefined
+  clearLongPress()
   preview.value = undefined
   edgeScroll.stop()
   releasePointer(active.element, active.pointerId)
@@ -786,12 +905,38 @@ function escapeKey(key: KeyboardEvent) {
 /** A new press starts afresh: a click suppressed for a release that never came must not swallow the next one. */
 function pressStart() {
   if (!gesture) suppressClick = false
+  suppressTap = false
 }
+/**
+ * A touch held still opens the browser's context menu or callout, which would end the drag (or the long press that
+ * starts one) with `pointercancel`; while a touch or pen gesture is in flight, the menu stays closed.
+ */
+function contextMenu(event: Event) {
+  if (gesture && gesture.pointerType !== 'mouse') event.preventDefault()
+}
+/** While a touch drags (an armed create, or an event, whose `touch-action` already keeps it), the page does not scroll. */
+function holdTouch(event: TouchEvent) {
+  if (gesture && gesture.pointerType === 'touch' && !gesture.pending && event.cancelable) event.preventDefault()
+}
+onMounted(() => root.value?.addEventListener('touchmove', holdTouch, { passive: false }))
+onBeforeUnmount(() => {
+  root.value?.removeEventListener('touchmove', holdTouch)
+  clearLongPress()
+})
 function eventKeys(key: KeyboardEvent, event: E, area: Area) {
   if (key.key === 'Enter') {
     // Enter opens the event; Space and clicks select it.
     key.preventDefault()
     emit('event-activate', event.id, 'keyboard')
+    return
+  }
+  if (view.value === 'agenda' && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key.key)) {
+    // The agenda is a list: Up and Down move the focus to the previous or next entry, Home and End to the first or last.
+    const entries = [...(root.value?.querySelectorAll<HTMLElement>('.vw-calendar-agenda-event') ?? [])]
+    const index = entries.indexOf(key.currentTarget as HTMLElement)
+    const target = key.key === 'Home' ? entries[0] : key.key === 'End' ? entries[entries.length - 1] : entries[index + (key.key === 'ArrowUp' ? -1 : 1)]
+    key.preventDefault()
+    target?.focus()
     return
   }
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key.key) || !editable(event) || gesture) return
@@ -842,7 +987,50 @@ function scrollToTime(time: number) {
   element.scrollTop = Math.max(0, pxOf(timeOfDay(day.start, time)))
 }
 
-defineExpose({ cancelEdit, scrollToTime })
+/**
+ * A standalone SVG document of the shown view with the default rendering and the current theme colours: the whole time
+ * grid from `dayStart` to `dayEnd` whatever is scrolled into view, the whole month, or every day of the agenda however
+ * far its list is scrolled. Slots and the toolbar buttons are not drawn. Throws the validation error of invalid props.
+ */
+function exportSvg(options: EventCalendarExportOptions<E> = {}) {
+  if (validationError.value) throw validationError.value
+  const { includeSelection = true, theme, width, heading, ...rest } = options
+  // Event colours such as var(--brand) or currentColor are written as the colour computed on the event's rendered button
+  // (the first one, for an event drawn in several segments), else on the calendar, since the standalone SVG has no
+  // stylesheet to resolve them; one whose var() has no value falls back to the tone, as on screen. The events themselves
+  // go to the renderer unchanged, so `eventLabel` receives the objects of `events`.
+  const rendered = new Map<string, Element>()
+  for (const element of root.value?.querySelectorAll<HTMLElement>('[data-vw-event]') ?? []) {
+    const id = element.dataset.vwEvent
+    if (id !== undefined && !rendered.has(id)) rendered.set(id, element)
+  }
+  const colours = withExportColours(root.value, resolve => {
+    const resolved = new Map<string, string | undefined>()
+    for (const event of props.events) if (event.color !== undefined) resolved.set(event.id, resolve(event.color, rendered.get(event.id)))
+    return resolved
+  })
+  return renderEventCalendarSvgWithColors(props.events, localDate.value, {
+    ...rest,
+    view: view.value, timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, agendaDays: props.agendaDays, locale: props.locale, resources: props.resources,
+    dayStart: props.dayStart, dayEnd: props.dayEnd, hourHeight: props.hourHeight, maxMonthLanes: props.maxMonthLanes, now: props.now,
+    formatTime: timeText.value, selectedId: includeSelection ? localSelected.value : undefined,
+    labels: {
+      allDay: messages.value.allDay, more: messages.value.more, resources: messages.value.resources, now: messages.value.now,
+      recurring: messages.value.recurring ?? '', empty: messages.value.empty,
+    },
+    width: width ?? (root.value?.clientWidth || undefined), heading: heading ?? (title.value || false),
+    direction: isRtl() ? 'rtl' : 'ltr',
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  }, event => colours.has(event.id) ? colours.get(event.id) : event.color)
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: EventCalendarPngExportOptions<E> = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+
+defineExpose({ cancelEdit, scrollToTime, exportSvg, exportPng })
 
 function eventClasses(event: E, extra: Record<string, boolean>) {
   return [`vw-tone-${event.tone ?? 'blue'}`, {
@@ -850,7 +1038,7 @@ function eventClasses(event: E, extra: Record<string, boolean>) {
     'vw-is-dragging': preview.value?.eventId === event.id, 'vw-is-recurring': isOccurrence(event), ...extra,
   }]
 }
-const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value === 'month' ? 'month' : area}-hint` : undefined
+const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value === 'month' || view.value === 'agenda' ? view.value : area}-hint` : undefined
 </script>
 
 <template>
@@ -858,7 +1046,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
     ref="root" class="vw-calendar" :class="[`vw-calendar-view-${view}`, { 'vw-rtl': dir === 'rtl', 'vw-is-creatable': creatable && !readonly }]"
     :dir="dir === 'auto' ? undefined : dir" :style="scrollbarWidth ? { '--vw-calendar-scrollbar': scrollbarWidth + 'px' } : undefined" role="region" :aria-label="messages.region"
     @pointermove="movePointer" @pointerup="pointerUp" @pointercancel="cancelPointer" @lostpointercapture="cancelPointer"
-    @pointerdown.capture="pressStart" @keydown.esc="escapeKey"
+    @pointerdown.capture="pressStart" @keydown.esc="escapeKey" @contextmenu="contextMenu"
   >
     <div v-if="showToolbar" class="vw-calendar-toolbar">
       <slot name="toolbar" v-bind="toolbarProps">
@@ -882,6 +1070,38 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
 
     <div v-if="!valid" class="vw-calendar-empty"><slot name="empty">{{ messages.empty }}</slot></div>
 
+    <div v-else-if="view === 'agenda'" class="vw-calendar-agenda" :style="{ maxHeight: scrollHeight }">
+      <div v-if="!agendaGroups.length" class="vw-calendar-empty"><slot name="empty">{{ messages.empty }}</slot></div>
+      <ul v-else class="vw-calendar-agenda-days" role="list" :aria-label="messages.agenda">
+        <li v-for="group in agendaGroups" :key="group.key" class="vw-calendar-agenda-day" :class="{ 'vw-is-today': isToday(group.day) }">
+          <div :id="group.id" class="vw-calendar-agenda-date">{{ group.label }}</div>
+          <ul class="vw-calendar-agenda-events" role="list" :aria-labelledby="group.id">
+            <li v-for="entry in group.entries" :key="entry.key">
+              <button
+                type="button" class="vw-calendar-event vw-calendar-agenda-event"
+                :class="eventClasses(entry.event, { 'vw-continues-before': entry.item.continuesBefore, 'vw-continues-after': entry.item.continuesAfter, 'vw-is-all-day': entry.item.allDay, 'vw-is-editable': false })"
+                :style="colorStyle(entry.event)" :tabindex="entry.primary ? 0 : -1" :data-vw-event="entry.event.id"
+                :aria-label="eventName(entry.event)" :title="eventName(entry.event)" :aria-pressed="localSelected === entry.event.id"
+                :aria-describedby="hintIds(entry.event, 'days')"
+                @click="select(entry.event, $event)" @dblclick="emit('event-activate', entry.event.id, 'pointer')"
+                @keydown="eventKeys($event, entry.event, 'days')" @blur="eventBlur"
+              >
+                <span class="vw-calendar-event-time vw-calendar-agenda-time">{{ entry.time }}</span>
+                <span class="vw-calendar-agenda-content">
+                  <slot name="event" :event="entry.event" :range="rangeOf(entry.event)" :selected="localSelected === entry.event.id" :all-day="entry.item.allDay" :view="view">
+                    <span class="vw-calendar-event-label">{{ entry.event.label }}</span>
+                    <small v-if="entry.event.resourceId !== undefined && resourceById.get(entry.event.resourceId)" class="vw-calendar-agenda-resource">
+                      {{ resourceById.get(entry.event.resourceId)!.label }}
+                    </small>
+                  </slot>
+                </span>
+              </button>
+            </li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+
     <template v-else-if="view !== 'month'">
       <div class="vw-calendar-head" :style="gridStyle">
         <div class="vw-calendar-corner">{{ resourceMode ? messages.resources : '' }}</div>
@@ -900,7 +1120,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
             :style="segment.style" :tabindex="segment.primary ? 0 : -1" :data-vw-event="segment.event.id"
             :aria-label="eventName(segment.event)" :title="eventName(segment.event)" :aria-pressed="localSelected === segment.event.id"
             :aria-describedby="hintIds(segment.event, 'days')"
-            @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event)"
+            @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event, $event)"
             @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')" @blur="eventBlur"
           >
             <slot name="event" :event="segment.event" :range="rangeOf(segment.event)" :selected="localSelected === segment.event.id" :all-day="true" :view="view">
@@ -929,7 +1149,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
               :style="box.style" :tabindex="box.primary ? 0 : -1" :data-vw-event="box.event.id"
               :aria-label="eventName(box.event)" :title="eventName(box.event)" :aria-pressed="localSelected === box.event.id"
               :aria-describedby="hintIds(box.event, 'grid')"
-              @pointerdown="startEdit($event, box.event, 'grid', index, 'move')" @click="select(box.event)"
+              @pointerdown="startEdit($event, box.event, 'grid', index, 'move')" @click="select(box.event, $event)"
               @dblclick="emit('event-activate', box.event.id, 'pointer')" @keydown="eventKeys($event, box.event, 'grid')" @blur="eventBlur"
             >
               <span v-if="editable(box.event) && !box.continuesBefore" class="vw-calendar-handle vw-is-start" aria-hidden="true" @pointerdown="startEdit($event, box.event, 'grid', index, 'start')" />
@@ -976,7 +1196,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
             :style="segment.style" :tabindex="segment.primary ? 0 : -1" :data-vw-event="segment.event.id"
             :aria-label="eventName(segment.event)" :title="eventName(segment.event)" :aria-pressed="localSelected === segment.event.id"
             :aria-describedby="hintIds(segment.event, 'days')"
-            @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event)"
+            @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event, $event)"
             @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')" @blur="eventBlur"
           >
             <slot name="event" :event="segment.event" :range="rangeOf(segment.event)" :selected="localSelected === segment.event.id" :all-day="inAllDayRow(segment.event)" :view="view">
@@ -998,6 +1218,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
     <span :id="`${uid}-grid-hint`" class="vw-sr-only">{{ messages.editHint }}</span>
     <span :id="`${uid}-days-hint`" class="vw-sr-only">{{ messages.dayEditHint }}</span>
     <span v-if="view === 'month'" :id="`${uid}-month-hint`" class="vw-sr-only">{{ messages.monthEditHint }}</span>
+    <span v-if="view === 'agenda'" :id="`${uid}-agenda-hint`" class="vw-sr-only">{{ messages.agendaEditHint }}</span>
     <span class="vw-sr-only" aria-live="polite">{{ notice }}</span>
   </div>
 </template>

@@ -1,10 +1,10 @@
 # Vue Weave
 
-[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/@eightkk/vue-weave.svg)](https://www.npmjs.com/package/@eightkk/vue-weave) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.6.0/LICENSE)
+[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/@eightkk/vue-weave.svg)](https://www.npmjs.com/package/@eightkk/vue-weave) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.7.0/LICENSE)
 
-[日本語](https://github.com/EightKK/vue-weave/blob/v1.6.0/README.ja.md)
+[日本語](https://github.com/EightKK/vue-weave/blob/v1.7.0/README.ja.md)
 
-**[Website](https://eightkk.github.io/vue-weave/)** · [Getting started](https://eightkk.github.io/vue-weave/learn/) · [Examples](https://eightkk.github.io/vue-weave/examples/) · [Showcase](https://eightkk.github.io/vue-weave/showcase/) · [API reference](https://eightkk.github.io/vue-weave/api/) · [Changelog](https://github.com/EightKK/vue-weave/blob/v1.6.0/CHANGELOG.md)
+**[Website](https://eightkk.github.io/vue-weave/)** · [Getting started](https://eightkk.github.io/vue-weave/learn/) · [Examples](https://eightkk.github.io/vue-weave/examples/) · [Showcase](https://eightkk.github.io/vue-weave/showcase/) · [API reference](https://eightkk.github.io/vue-weave/api/) · [Changelog](https://github.com/EightKK/vue-weave/blob/v1.7.0/CHANGELOG.md)
 
 Interactive network graphs, Gantt charts and tree grids for Vue 3, with a headless core for layout, scheduling and resource planning. Build relationship explorers, process flows, project schedules, resource timelines and bill-of-materials editors from typed, controlled components, and run the graph, scheduling, resource-load and earned value calculations in Node.js, workers and on servers too.
 
@@ -34,17 +34,17 @@ Import the stylesheet once, for example in your application's entry file:
 import '@eightkk/vue-weave/style.css'
 ```
 
-Vite handles this import as it is. If your `tsconfig.json` enables `noUncheckedSideEffectImports`, or your build has no CSS loader, see [The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/integration.md#the-stylesheet-and-typescript).
+Vite handles this import as it is. If your `tsconfig.json` enables `noUncheckedSideEffectImports`, or your build has no CSS loader, see [The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/integration.md#the-stylesheet-and-typescript).
 
-**Core only (servers and Workers).** `@eightkk/vue-weave/core` runs without Vue at runtime, in Node.js 22.18+, Workers and on servers. Vue is still a required peer dependency (an optional peer is not configured), so `npm install @eightkk/vue-weave` installs Vue as well. To leave it out of a core-only deployment, install with `--omit=peer`. See [Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/integration.md#core-only-servers-and-workers).
+**Core only (servers and Workers).** `@eightkk/vue-weave/core` runs without Vue at runtime, in Node.js 22.18+, Workers and on servers. Vue is still a required peer dependency (an optional peer is not configured), so `npm install @eightkk/vue-weave` installs Vue as well. To leave it out of a core-only deployment, install with `--omit=peer`. See [Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/integration.md#core-only-servers-and-workers).
 
-**Offline install.** Each [GitHub Release](https://github.com/EightKK/vue-weave/releases) also has the package tarball, the same file that is published to npm. Download `eightkk-vue-weave-1.6.0.tgz` and install it from your application's directory, replacing the example path with the actual one:
+**Offline install.** Each [GitHub Release](https://github.com/EightKK/vue-weave/releases) also has the package tarball, the same file that is published to npm. Download `eightkk-vue-weave-1.7.0.tgz` and install it from your application's directory, replacing the example path with the actual one:
 
 ```sh
-npm install ./eightkk-vue-weave-1.6.0.tgz
+npm install ./eightkk-vue-weave-1.7.0.tgz
 ```
 
-You can also [build a local package](https://github.com/EightKK/vue-weave/blob/v1.6.0/CONTRIBUTING.md#build-a-local-package) from a checkout.
+You can also [build a local package](https://github.com/EightKK/vue-weave/blob/v1.7.0/CONTRIBUTING.md#build-a-local-package) from a checkout.
 
 ## Quick start
 
@@ -145,8 +145,8 @@ More in [Getting started](https://eightkk.github.io/vue-weave/learn/) and the [L
 | --- | --- | --- |
 | `NetworkGraph` | Layered, tree, radial, force and swimlane layouts, BPMN and flowchart shapes, quantity flows, groups, editing as proposals, minimap and culling for large graphs | [API](https://eightkk.github.io/vue-weave/api/components/network-graph.html) · [Examples](https://eightkk.github.io/vue-weave/examples/#graph) |
 | `GanttChart` | Dependencies, baselines, critical path, resource load rows, spreadsheet editing, calendars and time zones, row and time virtualization | [API](https://eightkk.github.io/vue-weave/api/components/gantt-chart.html) · [Examples](https://eightkk.github.io/vue-weave/examples/#timeline) |
-| `TreeGrid` | A row tree against columns or a matrix, virtualized in both directions, with cell, spreadsheet and row structure editing | [API](https://eightkk.github.io/vue-weave/api/components/tree-grid.html) · [Examples](https://eightkk.github.io/vue-weave/examples/#tree-grid) |
-| `TaskBoard`, `EventCalendar` | Kanban board with WIP limits and swimlanes; day, week and month calendar with resources and recurring events | [TaskBoard](https://eightkk.github.io/vue-weave/api/components/task-board.html) · [EventCalendar](https://eightkk.github.io/vue-weave/api/components/event-calendar.html) |
+| `TreeGrid` | A row tree against columns or a matrix, virtualized in both directions, with cell, spreadsheet and row structure editing and header sorting, filtering and column resizing | [API](https://eightkk.github.io/vue-weave/api/components/tree-grid.html) · [Examples](https://eightkk.github.io/vue-weave/examples/#tree-grid) |
+| `TaskBoard`, `EventCalendar` | Kanban board with WIP limits and swimlanes; day, week, month and agenda calendar with resources and recurring events | [TaskBoard](https://eightkk.github.io/vue-weave/api/components/task-board.html) · [EventCalendar](https://eightkk.github.io/vue-weave/api/components/event-calendar.html) |
 | `GraphPalette`, `PropertyInspector` | Parts for diagram editors: a shape palette and a typed property panel | [API](https://eightkk.github.io/vue-weave/api/components/diagram-editor.html) |
 | Composables | Linked selection, undo and redo, saving through your server, view state, windowed loading, layouts in a worker | [API](https://eightkk.github.io/vue-weave/api/composables.html) |
 | `@eightkk/vue-weave/core` | Graph algorithms and traversal, scheduling and leveling, earned value, time buckets, structure diffs, interchange and SVG export, without Vue at runtime | [API](https://eightkk.github.io/vue-weave/api/core/) · [Type reference](https://eightkk.github.io/vue-weave/api/reference/) |
@@ -155,12 +155,12 @@ See the [Examples](https://eightkk.github.io/vue-weave/examples/) for every feat
 
 ## Status and support
 
-- **Stable since 1.0.** Releases follow [Semantic Versioning](https://semver.org/): breaking changes are made only in major releases and are listed under "Breaking changes" in the [changelog](https://github.com/EightKK/vue-weave/blob/v1.6.0/CHANGELOG.md). [Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/api.md#compatibility-and-versioning) lists what that covers (exported names and types, props, events, slots, documented `--vw-*` properties and the snapshot format) and what it does not (the exact text of error messages, the emitted `vw-` classes, DOM structure and server-rendered markup).
+- **Stable since 1.0.** Releases follow [Semantic Versioning](https://semver.org/): breaking changes are made only in major releases and are listed under "Breaking changes" in the [changelog](https://github.com/EightKK/vue-weave/blob/v1.7.0/CHANGELOG.md). [Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/api.md#compatibility-and-versioning) lists what that covers (exported names and types, props, events, slots, documented `--vw-*` properties and the snapshot format) and what it does not (the exact text of error messages, the emitted `vw-` classes, DOM structure and server-rendered markup).
 - **Vue:** 3.5 or later in 3.x (peer dependency `^3.5.0`).
 - **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
 - **Node.js:** 22.18 or later for the headless `@eightkk/vue-weave/core` entry, server-side rendering and development.
 - **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium on every change. The same tests also run in Firefox and WebKit in a CI job that does not block merging yet; the tests that need real multi-touch input run in Chromium only.
-- **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/architecture.md)), so do not assume full conformance.
+- **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/architecture.md)), so do not assume full conformance.
 
 ## Run the website locally
 
@@ -172,21 +172,21 @@ npm run build:demo
 npm start
 ```
 
-`npm start` serves the built site at `http://127.0.0.1:4173/vue-weave/`. On Windows you can double-click `Start.cmd` instead; it rebuilds the site first when its sources changed. A prebuilt site archive attached to a release runs with `npm start` without installing dependencies. The standalone production planning app is at `/vue-weave/demo/`. For development and verification commands, see [Contributing](https://github.com/EightKK/vue-weave/blob/v1.6.0/CONTRIBUTING.md).
+`npm start` serves the built site at `http://127.0.0.1:4173/vue-weave/`. On Windows you can double-click `Start.cmd` instead; it rebuilds the site first when its sources changed. A prebuilt site archive attached to a release runs with `npm start` without installing dependencies. The standalone production planning app is at `/vue-weave/demo/`. For development and verification commands, see [Contributing](https://github.com/EightKK/vue-weave/blob/v1.7.0/CONTRIBUTING.md).
 
 ## Documentation
 
-The [API reference](https://eightkk.github.io/vue-weave/api/) and [guides](https://eightkk.github.io/vue-weave/learn/) on the website are built from the Markdown files in [`docs/`](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/), which are also included in the npm package:
+The [API reference](https://eightkk.github.io/vue-weave/api/) and [guides](https://eightkk.github.io/vue-weave/learn/) on the website are built from the Markdown files in [`docs/`](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/), which are also included in the npm package:
 
-- [Public API and input contracts](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/api.md)
-- [Vue, Nuxt, custom rendering, time scales and persistence](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/integration.md)
-- [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/architecture.md)
-- [Scheduling and resource load](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/scheduling.md)
-- [Contributing and release process](https://github.com/EightKK/vue-weave/blob/v1.6.0/CONTRIBUTING.md)
-- [Security and private vulnerability reporting](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/security.md)
-- [Code of conduct](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/code-of-conduct.md)
-- [Changelog](https://github.com/EightKK/vue-weave/blob/v1.6.0/CHANGELOG.md)
+- [Public API and input contracts](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/api.md)
+- [Vue, Nuxt, custom rendering, time scales and persistence](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/integration.md)
+- [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/architecture.md)
+- [Scheduling and resource load](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/scheduling.md)
+- [Contributing and release process](https://github.com/EightKK/vue-weave/blob/v1.7.0/CONTRIBUTING.md)
+- [Security and private vulnerability reporting](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/security.md)
+- [Code of conduct](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/code-of-conduct.md)
+- [Changelog](https://github.com/EightKK/vue-weave/blob/v1.7.0/CHANGELOG.md)
 
 ## License
 
-MIT. See [LICENSE](https://github.com/EightKK/vue-weave/blob/v1.6.0/LICENSE). Third-party notices for the prebuilt site are in [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.6.0/THIRD_PARTY_NOTICES.md) and [Third-party licenses](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/third-party-licenses.md).
+MIT. See [LICENSE](https://github.com/EightKK/vue-weave/blob/v1.7.0/LICENSE). Third-party notices for the prebuilt site are in [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.7.0/THIRD_PARTY_NOTICES.md) and [Third-party licenses](https://github.com/EightKK/vue-weave/blob/v1.7.0/docs/third-party-licenses.md).

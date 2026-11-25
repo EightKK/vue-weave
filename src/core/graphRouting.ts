@@ -10,9 +10,10 @@ import { assertGraphLayoutDirection, graphFlowSides } from './graphOrient.js'
 import { assertGraphPortSide, graphSideAnchor, graphSideNormals as normals } from './graphPortSide.js'
 import { clipToGraphOutline, graphOutlineAlong, graphOutlineShape, isGraphFlowchartShape } from './graphShapes.js'
 import {
-  buildGraphObstacleIndex, graphPolylineClear, resolveObstacleAvoidance, routeAroundObstacles, type GraphObstacleAvoidance,
-  type GraphObstacleIndex, type ResolvedAvoidance,
+  buildGraphObstacleIndex, graphPolylineClear, isSearchTraceCurrent, rectNear, resolveObstacleAvoidance, routeAroundObstacles,
+  type GraphObstacleAvoidance, type GraphObstacleIndex, type GraphSearchTrace, type ResolvedAvoidance,
 } from './graphObstacleRouting.js'
+import type { SpatialRect } from './graphSpatial.js'
 import { unknownReferenceError } from './ids.js'
 
 /** How NetworkGraph and `routeGraphEdges` draw edges. `curve` is the layout's own routing. */
@@ -49,6 +50,19 @@ export interface GraphEdgeRouteOptions {
    * route around the boxes keeps the plain orthogonal route. Default undefined: routes do not avoid boxes.
    */
   avoidNodes?: boolean | GraphObstacleAvoidance
+  /**
+   * Opt-in memo from `createGraphRouteCache`. A call with a cache reuses the route of every edge whose inputs are the
+   * same as in the previous call with that cache: the edge, its end nodes' shapes and ports, its end boxes, its path
+   * and label in `layout`, its parallel slot and the options, and with `avoidNodes` every box and box edge the
+   * obstacle search read. The result is the same as without a cache; only the work differs. Use one cache per
+   * sequence of related layouts, such as one view's layout after each edit. Default undefined: every edge is routed.
+   */
+  cache?: GraphRouteCache
+}
+
+/** A memo of the edge routes of `routeGraphEdges` calls, from `createGraphRouteCache`. Its contents are internal. */
+export interface GraphRouteCache {
+  readonly graphRouteCache: true
 }
 
 /**
@@ -398,7 +412,15 @@ function nestedLoop(box: GraphBox, side: Side, slot: GraphParallelSlot, spacing:
   return [a, out(a), out(b), b]
 }
 
-function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<string, IdentifiedNode>, settings: RouteSettings): GraphEdgeRoute | undefined {
+// What one edge's route read from the obstacle index: the area of the bypass lane it tested, and its obstacle search.
+interface RouteDeps {
+  lane?: SpatialRect
+  trace?: GraphSearchTrace
+}
+
+function routeEdge(
+  layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<string, IdentifiedNode>, settings: RouteSettings, deps?: RouteDeps,
+): GraphEdgeRoute | undefined {
   const { direction, cornerRadius, spacing } = settings
   const style = edge.edgeStyle ?? settings.style
   const source = layout.boxes.get(edge.from), target = layout.boxes.get(edge.to)
@@ -426,7 +448,7 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
     if (path !== undefined && /^M[\d\s.,eE+-]+(?:[HV][\d\s.,eE+-]+)+$/.test(path)) {
       const ends = graphPathEndpoints(path)
       if (ends && isOnGraphBoxSide(source, ends.start) && isOnGraphBoxSide(target, ends.end)
-        && (!settings.avoid || graphPolylineClear(settings.avoid.index(), axisPathPoints(path), new Set([edge.from, edge.to])))) {
+        && (!settings.avoid || laneClear(settings.avoid.index(), path, edge, deps))) {
         const label = layout.edgeLabels.get(edge.id)
         return { path, label: label ?? ends.start, points: [] }
       }
@@ -460,7 +482,9 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
     } else {
       const [fromSide, toSide] = defaultSides(source, target, direction)
       const a = fromPort ?? sidePoint(source, fromSide), b = toPort ?? sidePoint(target, toSide)
-      const avoided = settings.avoid && routeAroundObstacles(settings.avoid.index(), a, b, settings.avoid.settings.bendPenalty)
+      const trace = deps && settings.avoid ? {} as GraphSearchTrace : undefined
+      const avoided = settings.avoid && routeAroundObstacles(settings.avoid.index(), a, b, settings.avoid.settings.bendPenalty, trace)
+      if (trace) deps!.trace = trace
       // The route keeps the sides of its ends, which `sides` below reads from the first and last point.
       points = avoided ? [a, ...avoided.slice(1, -1), b] : connect(a, b)
     }
@@ -523,6 +547,22 @@ function axisPathPoints(path: string): GraphPoint[] {
   return points
 }
 
+// Whether a bypass lane crosses no box other than its end nodes; `deps` records the area the test read.
+function laneClear(index: GraphObstacleIndex, path: string, edge: GraphEdge, deps: RouteDeps | undefined) {
+  const points = axisPathPoints(path)
+  if (deps) {
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
+    for (const point of points) {
+      x1 = Math.min(x1, point.x)
+      y1 = Math.min(y1, point.y)
+      x2 = Math.max(x2, point.x)
+      y2 = Math.max(y2, point.y)
+    }
+    deps.lane = { x1, y1, x2, y2 }
+  }
+  return graphPolylineClear(index, points, new Set([edge.from, edge.to]))
+}
+
 // Obstacle indexes by box map, for callers that route the edges of one immutable box map in several calls.
 const obstacleIndexes = new WeakMap<ReadonlyMap<string, GraphBox>, Map<number, GraphObstacleIndex>>()
 
@@ -581,25 +621,226 @@ export function routeGraphEdgesWithSlots(
   if (style === 'curve' && !edges.some(edge => edge.points?.length || (edge.edgeStyle ?? style) !== 'curve' || active?.has(edge.id))) {
     return layout
   }
+  const state = options.cache === undefined ? undefined : cacheState(options.cache)
+  const key = [style, direction, cornerRadius, spacing, avoidance?.clearance, avoidance?.bendPenalty].join(' ')
+  const reuse = state?.reuse && state.key === key ? reusableRecords(state, layout.boxes, avoid) : undefined
+  const records = state && new Map<string, RouteReach>()
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
   const routes = layout.routes && new Map(layout.routes)
   const redrawn: string[] = []
   let { width, height } = layout
+  let dependent = false
   for (const edge of edges) {
     if (policy === 'preserve' && isGraphRouteValid(layout, nodes, edge)) continue
-    const route = routeEdge(layout, edge, nodes, settings)
-    if (!route) continue
-    paths.set(edge.id, route.path)
-    edgeLabels.set(edge.id, route.label)
-    if (route.route) {
-      routes?.set(edge.id, route.route)
+    let record: RouteReach | undefined = reuse?.(edge, layout, nodes, active)
+    let drawn: Drawn | undefined
+    if (record) drawn = (record as RouteRecord).drawn && copyDrawn((record as RouteRecord).drawn!)
+    else {
+      const deps: RouteDeps | undefined = state?.reuse ? {} : undefined
+      const route = routeEdge(layout, edge, nodes, settings, deps)
+      let right = -Infinity, bottom = -Infinity
+      for (const point of route?.points ?? []) {
+        right = Math.max(right, point.x + 8)
+        bottom = Math.max(bottom, point.y + 8)
+      }
+      drawn = route && { path: route.path, label: route.label, route: route.route }
+      if (state) record = deps ? newRecord(edge, layout, nodes, active, drawn, right, bottom, deps) : { right, bottom }
+      else if (route) {
+        width = Math.max(width, right)
+        height = Math.max(height, bottom)
+      }
+    }
+    if (record) {
+      records!.set(edge.id, record)
+      width = Math.max(width, record.right)
+      height = Math.max(height, record.bottom)
+      if ((record as RouteRecord).lane || (record as RouteRecord).trace) dependent = true
+    }
+    if (!drawn) continue
+    paths.set(edge.id, drawn.path)
+    edgeLabels.set(edge.id, drawn.label)
+    if (drawn.route) {
+      routes?.set(edge.id, drawn.route)
       redrawn.push(edge.id)
     }
-    for (const point of route.points) {
-      width = Math.max(width, point.x + 8)
-      height = Math.max(height, point.y + 8)
-    }
+  }
+  if (state) {
+    Object.assign(state, { records })
+    if (state.reuse) Object.assign(state, { key, boxes: boxRects(layout.boxes), index: dependent ? avoid!.index() : undefined })
   }
   return markBuiltinRoutes({ boxes: layout.boxes, paths, edgeLabels, width, height, ...routes && { routes } }, layout, redrawn)
+}
+
+// ---- route cache ---------------------------------------------------------------------------------------------------
+
+// What a route read from its edge, the edge's end nodes and its own entries in the layout, compared by value.
+interface EndKey {
+  shape: unknown
+  port?: { side: unknown; offset: unknown } | null
+}
+// How far right and down a route reaches, plus the 8 units routing adds; -Infinity when the edge keeps its path.
+interface RouteReach {
+  right: number
+  bottom: number
+}
+// What a drawn edge adds to the routed layout.
+interface Drawn {
+  path: string
+  label: GraphPoint
+  route?: GraphLayoutRoute
+}
+interface RouteRecord extends RouteReach {
+  from: string
+  to: string
+  edgeStyle: unknown
+  fromPort: string | undefined
+  toPort: string | undefined
+  points: readonly GraphPoint[] | undefined
+  fromEnd: EndKey
+  toEnd: EndKey
+  path: string | undefined
+  label: GraphPoint | undefined
+  slot: GraphParallelSlot | undefined
+  drawn: Drawn | undefined
+  lane?: SpatialRect
+  trace?: GraphSearchTrace
+}
+interface CacheState {
+  /** False for a recorder that only keeps how far each route reaches. */
+  reuse: boolean
+  key?: string
+  boxes: Map<string, SpatialRect>
+  index?: GraphObstacleIndex
+  records: Map<string, RouteReach>
+}
+
+const cacheStates = new WeakMap<GraphRouteCache, CacheState>()
+// Past this many changed boxes, a call routes every edge again instead of testing each cached route against them.
+const maxChangedBoxes = 512
+
+/**
+ * Creates an empty memo for the `cache` option of `routeGraphEdges`. A cache holds the routes of the last call made
+ * with it. It is not structured-cloneable: a worker that routes keeps a cache of its own.
+ */
+export function createGraphRouteCache(): GraphRouteCache {
+  return newCache(true)
+}
+
+/** Internal: a cache that never reuses routes and only records how far they reach (see `graphRouteCacheExtents`). */
+export function createGraphRouteRecorder(): GraphRouteCache {
+  return newCache(false)
+}
+
+function newCache(reuse: boolean): GraphRouteCache {
+  const cache: GraphRouteCache = Object.freeze({ graphRouteCache: true as const })
+  cacheStates.set(cache, { reuse, boxes: new Map(), records: new Map() })
+  return cache
+}
+
+function cacheState(cache: GraphRouteCache): CacheState {
+  const state = cacheStates.get(cache)
+  if (!state) throw new Error('The route cache must come from createGraphRouteCache')
+  return state
+}
+
+/**
+ * Internal: how far right and down the route of each edge drawn by the last call with `cache` reaches, plus the 8
+ * units routing adds (-Infinity when the edge kept its path). Edges that the call skipped are missing.
+ */
+export function graphRouteCacheExtents(cache: GraphRouteCache): ReadonlyMap<string, { right: number; bottom: number }> {
+  return cacheState(cache).records
+}
+
+function boxRects(boxes: ReadonlyMap<string, GraphBox>) {
+  const rects = new Map<string, SpatialRect>()
+  for (const [id, box] of boxes) rects.set(id, { x1: box.x, y1: box.y, x2: box.x + box.width, y2: box.y + box.height })
+  return rects
+}
+
+function endKey(nodes: ReadonlyMap<string, IdentifiedNode>, id: string, portId: string | undefined): EndKey {
+  const node = nodes.get(id)
+  const shape = (node as { shape?: unknown } | undefined)?.shape
+  if (portId === undefined) return { shape }
+  const port = node?.ports?.find(item => item.id === portId)
+  return { shape, port: port ? { side: port.side, offset: port.offset } : null }
+}
+
+function sameEnd(a: EndKey, b: EndKey) {
+  return a.shape === b.shape && (a.port === b.port || (Boolean(a.port) && Boolean(b.port)
+    && a.port!.side === b.port!.side && a.port!.offset === b.port!.offset))
+}
+
+function samePoint(a: GraphPoint | undefined, b: GraphPoint | undefined) {
+  return a === b || (a !== undefined && b !== undefined && a.x === b.x && a.y === b.y)
+}
+
+function copyPoint<P extends GraphPoint | undefined>(point: P): P {
+  return (point && { x: point.x, y: point.y }) as P
+}
+
+// Results share no objects with the cache, so a caller that changes a result does not change later ones.
+function copyDrawn(drawn: Drawn): Drawn {
+  const meta = drawn.route
+  return {
+    path: drawn.path, label: copyPoint(drawn.label),
+    ...meta && { route: { ...meta, start: copyPoint(meta.start), end: copyPoint(meta.end), points: meta.points?.map(copyPoint) } },
+  }
+}
+
+function newRecord(
+  edge: GraphEdge, layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, slots: ReadonlyMap<string, GraphParallelSlot> | undefined,
+  drawn: Drawn | undefined, right: number, bottom: number, deps: RouteDeps,
+): RouteRecord {
+  const slot = slots?.get(edge.id)
+  return {
+    from: edge.from, to: edge.to, edgeStyle: edge.edgeStyle, fromPort: edge.fromPort, toPort: edge.toPort,
+    points: edge.points?.map(copyPoint), fromEnd: endKey(nodes, edge.from, edge.fromPort), toEnd: endKey(nodes, edge.to, edge.toPort),
+    path: layout.paths.get(edge.id), label: copyPoint(layout.edgeLabels.get(edge.id)), slot: slot && { ...slot },
+    drawn: drawn && copyDrawn(drawn), right, bottom, ...deps,
+  }
+}
+
+// A lookup of the cached records that are still valid for `boxes`, or undefined when too many boxes changed.
+function reusableRecords(state: CacheState, boxes: ReadonlyMap<string, GraphBox>, avoid: RouteSettings['avoid']) {
+  const before = state.boxes
+  const changed = new Set<string>(), areas: SpatialRect[] = []
+  // The old and new areas of the changed boxes, grown by the clearance as the obstacle index grows them.
+  const grow = avoid?.settings.clearance ?? 0
+  const area = (rect: SpatialRect) => areas.push({ x1: rect.x1 - grow, y1: rect.y1 - grow, x2: rect.x2 + grow, y2: rect.y2 + grow })
+  for (const [id, box] of boxes) {
+    const old = before.get(id)
+    if (old && old.x1 === box.x && old.y1 === box.y && old.x2 === box.x + box.width && old.y2 === box.y + box.height) continue
+    changed.add(id)
+    if (old) area(old)
+    area({ x1: box.x, y1: box.y, x2: box.x + box.width, y2: box.y + box.height })
+    if (changed.size > maxChangedBoxes) return undefined
+  }
+  for (const [id, old] of before) {
+    if (boxes.has(id)) continue
+    changed.add(id)
+    area(old)
+    if (changed.size > maxChangedBoxes) return undefined
+  }
+  return (
+    edge: GraphEdge, layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, slots: ReadonlyMap<string, GraphParallelSlot> | undefined,
+  ): RouteRecord | undefined => {
+    const record = state.records.get(edge.id) as RouteRecord | undefined
+    if (!record || changed.has(edge.from) || changed.has(edge.to)) return undefined
+    if (record.from !== edge.from || record.to !== edge.to || record.edgeStyle !== edge.edgeStyle
+      || record.fromPort !== edge.fromPort || record.toPort !== edge.toPort) return undefined
+    const points = edge.points ?? []
+    if ((record.points?.length ?? 0) !== points.length || !points.every((point, i) => samePoint(point, record.points![i]))) return undefined
+    if (record.path !== layout.paths.get(edge.id) || !samePoint(record.label, layout.edgeLabels.get(edge.id))) return undefined
+    const slot = slots?.get(edge.id)
+    if (record.slot !== slot && !(record.slot && slot && record.slot.index === slot.index && record.slot.count === slot.count
+      && record.slot.reversed === slot.reversed)) return undefined
+    if (!sameEnd(record.fromEnd, endKey(nodes, edge.from, edge.fromPort)) || !sameEnd(record.toEnd, endKey(nodes, edge.to, edge.toPort))) return undefined
+    if (record.lane || record.trace) {
+      if (!avoid || !state.index) return undefined
+      if (record.lane && areas.some(rect => rectNear(rect, record.lane!))) return undefined
+      if (record.trace && !isSearchTraceCurrent(record.trace, state.index, avoid.index(), areas)) return undefined
+    }
+    return record
+  }
 }

@@ -142,3 +142,24 @@ test('projectTimelineView returns exactly the rows part of projectTimelineRows',
   assert.deepEqual(pinned.bars.map(bar => bar.id), ['bd1', 'bd2'])
   assert.deepEqual(pinned.diagnostics.map(item => [item.code, item.id]), [['unknown-column', 'lost']])
 })
+
+test('projectTimelineRows looks up sort rules by own key only, so columns named like Object.prototype members sort', () => {
+  const flat = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }]
+  const order = { a: 2, b: 3, c: 1 }
+  const stateOf = id => ({ search: { text: '' }, sort: [{ ruleId: id, direction: 'asc' }], filters: [], collapsedIds: [] })
+  for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    const columns = [{ id, label: id, width: 60, value: row => order[row.id] }]
+    for (const sortRules of [undefined, {}]) {
+      const projected = projectTimelineRows({ rows: flat, columns, sortRules }, stateOf(id))
+      assert.deepEqual(projected.rows.map(row => row.id), ['c', 'a', 'b'], `${id} with sortRules ${JSON.stringify(sortRules)}`)
+      assert.deepEqual(projected.diagnostics, [])
+    }
+    // A registered rule of that name still wins over the column (a computed key is an own property, even __proto__).
+    const registered = projectTimelineRows({ rows: flat, columns, sortRules: { [id]: (x, y) => y.label.localeCompare(x.label) } }, stateOf(id))
+    assert.deepEqual(registered.rows.map(row => row.id), ['c', 'b', 'a'], id)
+    // Without such a column the ID is reported, not taken from the prototype.
+    const unknown = projectTimelineRows({ rows: flat, sortRules: {} }, stateOf(id))
+    assert.deepEqual(unknown.rows.map(row => row.id), ['a', 'b', 'c'], id)
+    assert.deepEqual(unknown.diagnostics.map(item => [item.code, item.id]), [['unknown-sort-rule', id]])
+  }
+})

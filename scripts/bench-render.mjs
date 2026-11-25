@@ -62,6 +62,7 @@ const scenarios = [
   { kind: 'gantt', label: 'GanttChart (rows, one bar each, chained dependencies)', sizes: [100, 1000, 5000], bar: '.vw-gantt-bar' },
   { kind: 'graph', label: 'NetworkGraph (layered layout, draggable)', sizes: [100, 1000, 3000], bar: '.vw-network-node' },
   { kind: 'graph-culled', label: 'NetworkGraph with cullOffscreen', sizes: [1000, 3000], bar: '.vw-network-node' },
+  { kind: 'graph-culled-avoid', label: 'NetworkGraph with cullOffscreen, orthogonal edges and avoidNodes', sizes: [1000, 3000], bar: '.vw-network-node' },
   { kind: 'treegrid', label: 'TreeGrid (roots expanded)', sizes: [[1000, 20], [10000, 50], [50000, 100]] },
 ].filter(item => !only?.length || only.includes(item.kind))
 
