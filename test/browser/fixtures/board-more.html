@@ -18,8 +18,8 @@
 
       // A TaskBoard of 5 cards in 4 columns, with two lanes unless `nolanes`. Every event is logged as a JSON line to the
       // "Board log" status. The parent applies moves, collapsed IDs and the selection. Query parameters: nolanes, rtl,
-      // readonly, strict (validateCardMove refuses a column already at its WIP limit), slots (card, column-header and
-      // empty slots), german (labels), collapsible. Controls call the exposed focusCard and cancelMove, replace the cards
+      // readonly, strict (validateCardMove refuses a column already at its WIP limit), slots (card, column-header, with its own
+      // collapse toggle under collapsible, and empty slots), german (labels), collapsible. Controls call the exposed focusCard and cancelMove, replace the cards
       // with equal new objects and reload the page state.
       const query = new URLSearchParams(location.search)
       const lanes = query.has('nolanes') ? undefined : [{ id: 'web', label: 'Web', detail: 'Front end' }, { id: 'api', label: 'API' }]
@@ -76,7 +76,11 @@
               onCardMoveCancel: event => record('cancel', event.id, event.reason, event.source),
             }, query.has('slots') ? {
               card: ({ card, selected: isSelected, moving, column, lane }) => h('span', { class: 'slot-card' }, `${card.label} in ${column.label}${lane ? ' / ' + lane.label : ''}${isSelected ? ' selected' : ''}${moving ? ' moving' : ''}`),
-              'column-header': ({ column, status }) => h('span', { class: 'slot-head' }, `${column.label}: ${status.count}${status.overLimit ? ' over' : status.atLimit ? ' full' : ''}${status.underMinimum ? ' short' : ''}`),
+              'column-header': ({ column, status, collapsed, toggle, toggleLabel }) => [
+                // With `collapsible`, the slot draws its own collapse toggle from the slot props.
+                query.has('collapsible') ? h('button', { type: 'button', class: 'slot-toggle', 'aria-expanded': String(!collapsed), 'aria-label': toggleLabel, onClick: toggle }, collapsed ? '+' : '−') : null,
+                h('span', { class: 'slot-head' }, `${column.label}: ${status.count}${status.overLimit ? ' over' : status.atLimit ? ' full' : ''}${status.underMinimum ? ' short' : ''}`),
+              ],
               empty: ({ column, lane }) => h('em', { class: 'slot-empty' }, `Nothing in ${column?.label}${lane ? ' / ' + lane.label : ''}`),
             } : undefined),
             h('pre', { role: 'status', 'aria-label': 'Board log' }, log.value.join('\n')),

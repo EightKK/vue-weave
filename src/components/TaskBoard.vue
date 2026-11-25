@@ -80,8 +80,15 @@ const emit = defineEmits<{
 defineSlots<{
   /** Content of a card button. Keep it non-interactive: the card is a button. */
   card(props: { card: C; selected: boolean; moving: boolean; column: TaskBoardColumn; lane?: TaskBoardLane }): unknown
-  /** Content of a column header, with the card count and WIP state of the column. */
-  'column-header'(props: { column: TaskBoardColumn; status: TaskBoardColumnStatus }): unknown
+  /**
+   * Content of a column header, with the card count and WIP state of the column. It replaces the whole header, the
+   * built-in collapse toggle included: `collapsed` is the column's collapsed state, `toggle()` proposes the toggled
+   * `collapsedColumnIds` (`update:collapsedColumnIds`) like the built-in toggle, and `toggleLabel` is that toggle's
+   * accessible name ("Collapse To do" or "Expand To do"), so the slot can draw its own toggle button.
+   */
+  'column-header'(props: {
+    column: TaskBoardColumn; status: TaskBoardColumnStatus; collapsed: boolean; toggle: () => void; toggleLabel: string
+  }): unknown
   /** Content of a cell without cards, and (without `column`) of a board without columns. */
   empty(props: { column?: TaskBoardColumn; lane?: TaskBoardLane }): unknown
 }>()
@@ -545,7 +552,10 @@ defineExpose({
             'vw-is-over-limit': item.status.overLimit, 'vw-is-at-limit': item.status.atLimit,
             'vw-is-under-minimum': item.status.underMinimum, 'vw-is-collapsed': item.collapsed,
           }">
-          <slot name="column-header" :column="item.column" :status="item.status">
+          <slot
+            name="column-header" :column="item.column" :status="item.status" :collapsed="item.collapsed"
+            :toggle="() => toggleColumn(item.column.id)" :toggleLabel="item.toggleName"
+          >
             <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!item.collapsed"
               :aria-label="item.toggleName" :aria-describedby="item.descriptionId" @click="toggleColumn(item.column.id)">
               <span class="vw-board-toggle-icon" aria-hidden="true"></span>
