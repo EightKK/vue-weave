@@ -137,6 +137,21 @@ test('useLinkedSelection: the acting view owns the selection and others only hig
   assert.throws(() => linked.select('graph', [bar('b1')]), /reported by view/)
 })
 
+test('useLinkedSelection: a repeated target does not hide a new target of the same length', () => {
+  const seen = []
+  const linked = useLinkedSelection({ bindings, onSelect: entities => seen.push(entities) })
+  assert.equal(linked.select('graph', [node('n1'), node('n1')]).changed, true)
+  // Same length, and every old target is still there, but r1 is new.
+  assert.equal(linked.select('graph', [node('n1'), node('r1')]).changed, true)
+  assert.deepEqual([...linked.graph.value.selectedNodeIds], ['n1', 'r1'])
+  assert.deepEqual(seen.at(-1), [task('A'), { kind: 'resource', id: 'A' }])
+  // The other way round as well, and the same targets in another order stay unchanged.
+  assert.equal(linked.select('graph', [node('n1'), node('n1')]).changed, true)
+  assert.deepEqual([...linked.graph.value.selectedNodeIds], ['n1'])
+  assert.equal(linked.select('graph', [node('n1'), node('n1')]).changed, false)
+  assert.equal(seen.length, 3)
+})
+
 test('useLinkedSelection: hover enters and leaves, unbound targets and reactive bindings', async () => {
   const source = ref([{ entity: task('A'), target: bar('b1') }])
   const linked = useLinkedSelection({ bindings: source })

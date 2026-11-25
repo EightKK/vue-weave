@@ -92,8 +92,9 @@ const sameTarget = (a: ViewTarget, b: ViewTarget): boolean =>
     ? a.view === 'load' && b.view === 'load' && a.resourceId === b.resourceId && a.start === b.start && a.end === b.end
     : a.view === b.view && a.kind === b.kind && a.id === b.id
 
+// Both directions: a list with a repeated target is not the same as one with another target in its place.
 const sameTargets = (a: readonly ViewTarget[], b: readonly ViewTarget[]): boolean =>
-  a.length === b.length && a.every(t => b.some(u => sameTarget(t, u)))
+  a.length === b.length && a.every(t => b.some(u => sameTarget(t, u))) && b.every(u => a.some(t => sameTarget(t, u)))
 
 const sameEntities = (a: readonly EntityRef[], b: readonly EntityRef[]): boolean =>
   a.length === b.length && a.every(e => b.some(f => e.kind === f.kind && e.id === f.id))
