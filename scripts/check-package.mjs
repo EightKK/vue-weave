@@ -130,7 +130,7 @@ try {
     import {
       NetworkGraph, GanttChart, type GanttChartExposed, type GraphEdge, type GraphNodeMove, type NetworkGraphExposed,
       type NetworkNode, type TimelineBar, type TimelineEdit, type TimelineRow,
-      EventCalendar, type CalendarEvent, type EventCalendarEdit, type EventCalendarExposed,
+      EventCalendar, type CalendarEvent, type EventCalendarEdit, type EventCalendarExposed, type EventCalendarView, type EventCalendarViewName,
       GraphPalette, PropertyInspector, readPaletteDrop, type InspectorChange,
       TaskBoard, type TaskBoardCard, type TaskBoardCardMove, type TaskBoardExposed,
     } from '${manifest.name}'
@@ -167,6 +167,18 @@ try {
     assertType<Equal<Parameters<NonNullable<typeof calendar.$props.onEdit>>[0], EventCalendarEdit>>()
     const calendarRef = undefined as EventCalendarExposed<CalendarEvent<MyData>> | undefined
     calendarRef?.cancelEdit()
+    // Code written for the three views keeps compiling (an exhaustive switch over the emitted and slot views), and a
+    // calendar that can show the agenda emits and passes EventCalendarViewName.
+    function viewLabel(view: EventCalendarView): string {
+      switch (view) {
+        case 'day': case 'week': case 'month': return view
+        default: { const unreachable: never = view; return unreachable }
+      }
+    }
+    const handleView: NonNullable<typeof calendar.$props['onUpdate:view']> = (view: EventCalendarView) => viewLabel(view)
+    void [handleView, viewLabel(({} as Parameters<NonNullable<typeof calendar.$slots.event>>[0]).view)]
+    const agenda = new EventCalendar({ events, date: 0, views: ['week', 'agenda'] })
+    assertType<Equal<Parameters<NonNullable<typeof agenda.$props['onUpdate:view']>>[0], EventCalendarViewName>>()
     void h(NetworkGraph, { nodes, edges })
     // The diagram editor parts infer their item types the same way.
     const palette = new GraphPalette({ items: [{ id: 'p', label: 'P', data: { owner: 'Ada' } }] })

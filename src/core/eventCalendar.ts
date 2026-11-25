@@ -11,11 +11,18 @@ import type { ChartTone } from './types.js'
 const dayMs = 86_400_000
 
 /**
- * A view of EventCalendar: one day, one week, the weeks of one month, or `agenda`, a chronological list of the events
- * of a week (or of `agendaDays` days) grouped by day. `agenda` is opt-in: the built-in view switch offers it only when
- * the `views` prop lists it.
+ * A view of EventCalendar that a calendar without the agenda shows: one day, one week or the weeks of one month. The
+ * view values EventCalendar emits and passes to its slots are of this type unless the calendar opts into the agenda
+ * (see `EventCalendarViewName`), so code written for these three views keeps compiling.
  */
-export type EventCalendarView = 'day' | 'week' | 'month' | 'agenda'
+export type EventCalendarView = 'day' | 'week' | 'month'
+
+/**
+ * Every view of EventCalendar: the `EventCalendarView` values and `agenda`, a chronological list of the events of a
+ * week (or of `agendaDays` days) grouped by day. The core functions take any of them. The agenda is opt-in: a calendar
+ * whose `view` or `views` can be `agenda` emits and passes this type, so type its view state with it.
+ */
+export type EventCalendarViewName = EventCalendarView | 'agenda'
 
 /** An appointment of EventCalendar. `D` types the opaque `data`. */
 export interface CalendarEvent<D = unknown> {
@@ -242,13 +249,13 @@ export interface EventCalendarLabels {
   agendaEditHint?: string
 }
 
-const views: readonly EventCalendarView[] = ['day', 'week', 'month', 'agenda']
+const views: readonly EventCalendarViewName[] = ['day', 'week', 'month', 'agenda']
 
 function checkTime(name: string, time: number) {
   if (typeof time !== 'number' || !Number.isFinite(time)) throw new RangeError(`${name} must be finite`)
 }
 
-function checkView(view: EventCalendarView) {
+function checkView(view: EventCalendarViewName) {
   if (!views.includes(view)) throw new RangeError('Unknown event calendar view: ' + String(view))
 }
 
@@ -286,7 +293,7 @@ function weekStartWall(midnight: number, weekStartsOn: number) {
 }
 
 /** The first and last-plus-one wall midnights of the days a view shows around `date`. */
-function viewWalls(view: EventCalendarView, date: number, zone: Zone, weekStartsOn: number, agendaDays?: number) {
+function viewWalls(view: EventCalendarViewName, date: number, zone: Zone, weekStartsOn: number, agendaDays?: number) {
   const midnight = wallMidnight(zone, date)
   if (view === 'day') return { first: midnight, end: midnight + dayMs }
   if (view === 'agenda' && agendaDays !== undefined) return { first: midnight, end: midnight + agendaDays * dayMs }
@@ -309,7 +316,7 @@ function viewWalls(view: EventCalendarView, date: number, zone: Zone, weekStarts
  * overlap this range. Throws RangeError for an unknown view, a non-finite date, an invalid `weekStartsOn`, `agendaDays`
  * or time zone.
  */
-export function eventCalendarRange(view: EventCalendarView, date: number, options?: EventCalendarOptions): TimeRange {
+export function eventCalendarRange(view: EventCalendarViewName, date: number, options?: EventCalendarOptions): TimeRange {
   checkView(view)
   checkTime('date', date)
   const { zone, weekStartsOn, agendaDays } = resolve(options)
@@ -322,7 +329,7 @@ export function eventCalendarRange(view: EventCalendarView, date: number, option
  * month grid for `month` (`inMonth` is false for days of the neighbouring months) and seven or `agendaDays` for
  * `agenda`.
  */
-export function eventCalendarDays(view: EventCalendarView, date: number, options?: EventCalendarOptions): EventCalendarDay[] {
+export function eventCalendarDays(view: EventCalendarViewName, date: number, options?: EventCalendarOptions): EventCalendarDay[] {
   checkView(view)
   checkTime('date', date)
   const { zone, weekStartsOn, agendaDays } = resolve(options)
@@ -348,7 +355,7 @@ export function eventCalendarMonthGrid(date: number, options?: EventCalendarOpti
  * the day of the month, clamped to the length of the target month (January 31 + 1 month is February 28 or 29). Throws
  * RangeError for a non-integer `steps`.
  */
-export function shiftEventCalendarDate(view: EventCalendarView, date: number, steps: number, options?: EventCalendarOptions): number {
+export function shiftEventCalendarDate(view: EventCalendarViewName, date: number, steps: number, options?: EventCalendarOptions): number {
   checkView(view)
   checkTime('date', date)
   if (!Number.isInteger(steps)) throw new RangeError('steps must be an integer')

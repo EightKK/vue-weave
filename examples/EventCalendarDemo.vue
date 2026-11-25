@@ -2,7 +2,7 @@
 import { computed, ref, useTemplateRef } from 'vue'
 import {
   EventCalendar, applyRecurringEdit, eventCalendarRange, expandRecurringEvents, intlTimeFormatter, useEditHistory, type CalendarEvent,
-  type CalendarResource, type EventCalendarCreate, type EventCalendarEdit, type EventCalendarView, type RecurringEditScope, type TimeRange,
+  type CalendarResource, type EventCalendarCreate, type EventCalendarEdit, type EventCalendarViewName, type RecurringEditScope, type TimeRange,
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
 import { download } from './download'
@@ -19,7 +19,7 @@ const { t, labels, intlLocale } = useDemoLocale()
 // of one occurrence is applied with `applyRecurringEdit` to this event, this and following events, or all of them.
 // The view switch also offers the opt-in agenda view (`views`), a list of the week's bookings by day.
 const at = (date: string, time = '00:00') => Date.parse(`2026-11-${date}T${time}:00Z`)
-const views: EventCalendarView[] = ['day', 'week', 'month', 'agenda']
+const views: EventCalendarViewName[] = ['day', 'week', 'month', 'agenda']
 const rooms: CalendarResource[] = [
   { id: 'atlas', label: 'Atlas', detail: t({ en: '12 seats', ja: '12 席' }) },
   { id: 'borealis', label: 'Borealis', detail: t({ en: '6 seats', ja: '6 席' }) },
@@ -48,7 +48,7 @@ const now = at('11', '11:15')
 
 const history = useEditHistory(initialEvents)
 const events = history.state
-const view = ref<EventCalendarView>('week')
+const view = ref<EventCalendarViewName>('week')
 const date = ref(now)
 const selectedId = ref<string>()
 const showRooms = ref(true)
@@ -139,7 +139,7 @@ function clearSelection() {
 function escapeSelection(event: KeyboardEvent) {
   if (event.key === 'Escape' && !event.defaultPrevented) clearSelection()
 }
-function rangeChange(range: TimeRange, current: EventCalendarView) {
+function rangeChange(range: TimeRange, current: EventCalendarViewName) {
   // A real application would load the bookings that overlap this range here.
   loaded.value = range
   void current

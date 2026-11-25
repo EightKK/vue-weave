@@ -1153,8 +1153,8 @@ A third controlled component for appointment-style scheduling: a day or week tim
 | --- | --- | --- |
 | events | readonly E[] (E extends CalendarEvent) / required | Events with `id`, `label` and a half-open `[start, end)` interval in epoch milliseconds; see below |
 | date | number / required | Anchor date of the view. Supports `v-model:date`; without a listener the calendar still navigates with local state |
-| view | `'day' \| 'week' \| 'month' \| 'agenda'` / `'week'` | Supports `v-model:view`, with local state like `date`. `agenda` is opt-in; see [Agenda view](#agenda-view) |
-| views | readonly EventCalendarView[] / `['day', 'week', 'month']` | The views the built-in view switch offers, in this order. Add `'agenda'` to offer the agenda. Unknown or repeated views are reported through `validation-error` |
+| view | `EventCalendarViewName` (`'day' \| 'week' \| 'month' \| 'agenda'`) / `'week'` | Supports `v-model:view`, with local state like `date`. `agenda` is opt-in; see [Agenda view](#agenda-view) and [View types](#view-types) |
+| views | readonly EventCalendarViewName[] / `['day', 'week', 'month']` | The views the built-in view switch offers, in this order. Add `'agenda'` to offer the agenda. Unknown or repeated views are reported through `validation-error` |
 | agendaDays | integer 1–366 / undefined | Length of the agenda: that many local days from the day of `date`, and Previous and Next step by that many days. Without it, the agenda shows the week that contains `date` (from `weekStartsOn`), like the week view |
 | weekStartsOn | number / 1 | First day of a week, 0 = Sunday to 6 = Saturday |
 | timeZone | string / `'UTC'` | IANA time zone of the days, hours and labels. Days start at local midnight, also across daylight-saving changes |
@@ -1204,6 +1204,18 @@ Touch and pen. Pointer events drive mouse, pen and touch alike, with these diffe
 
 The list is a `list` named `labels.agenda` ("Agenda"); each day is a list item with the long date (`Wednesday, November 11, 2026`, in `locale` and `timeZone`) that names the nested list of its events. Each entry is an event button with the same accessible name, `aria-pressed`, `event` slot (`view: 'agenda'`, after the entry's time) and colours as in the other views; the default content adds the resource label. Click and Space select, double click and Enter emit `event-activate`. Up and Down move the focus to the previous or next entry, Home and End to the first or last; Left and Right move an editable event by a day (mirrored with `dir: 'rtl'`) and Shift+Left/Right resizes the end of an all-day event, described by `labels.agendaEditHint`. A multi-day event is a Tab stop once. The agenda has no drag handles, creates nothing and fires no `background-click`.
 
+#### View types
+
+`EventCalendarView` is `'day' | 'week' | 'month'`, as in 1.6, and `EventCalendarViewName` adds `'agenda'`. The component is generic over the views beyond `EventCalendarView`, inferred from `view` and `views` like the event type from `events`:
+
+| Position | Type |
+| --- | --- |
+| Props `view`, `views` | Accept any `EventCalendarViewName` |
+| `update:view` and `v-model:view`, the view of `range-change`, the `view` of the `event` and `toolbar` slots, the toolbar's `setView` | `EventCalendarView` for a calendar whose `view` and `views` cannot be `'agenda'`, so code that switches exhaustively over three views, handlers typed `(view: EventCalendarView) => void` and a `ref<EventCalendarView>()` keep compiling; `EventCalendarViewName` for a calendar whose `view` or `views` can be `'agenda'` |
+| `eventCalendarRange`, `eventCalendarDays`, `shiftEventCalendarDate`, `renderEventCalendarSvg` (`view` option) | Take any `EventCalendarViewName` |
+
+To use the agenda, type the view state and handlers with `EventCalendarViewName`: `const view = ref<EventCalendarViewName>('week')`, `:views="['day', 'week', 'month', 'agenda']"`, `@update:view="(view: EventCalendarViewName) => …"`. No cast is needed. A handler typed with `EventCalendarView` on a calendar that offers the agenda is a type error, as it should be, since the calendar can emit `'agenda'`.
+
 Slots: `event({ event, range, selected, allDay, view })` replaces the content of an event button (use non-interactive content), `toolbar({ title, view, date, previous, next, today, setView })` replaces the toolbar content, and `empty()`. Methods: `cancelEdit()` cancels a gesture in flight (reason `api`); `scrollToTime(time)` scrolls the time grid to the time of day of `time`; `exportSvg(options?)` and `exportPng(options?)` export the shown view (see [Export to SVG and PNG](#export-to-svg-and-png)).
 
 The component renders on the server: it reads the DOM only in event handlers and after mounting, and it creates its hint IDs with `useId()`.
@@ -1224,7 +1236,7 @@ The core entry exports the calendar arithmetic and layout that EventCalendar use
 | `layoutCalendarAgenda(events, days)` | `CalendarAgendaDay[]`: for every one of `days` (ascending, non-overlapping) its `index`, `start`, `end` and `items`, the events that overlap it clipped to the day (`CalendarAgendaItem`: `id`, `start`, `end`, `allDay` for `allDay` events and days covered completely, `continuesBefore`, `continuesAfter`). All-day items first, then by start, longer first, then ID; empty `items` for a day without events. Throws for invalid or duplicate IDs, bad intervals or days, and never changes its arguments |
 | `validateCalendarEvents(events, resources?)` | Throws for invalid or duplicate IDs, bad intervals and unknown resources, with the texts above |
 
-Related exported types: `EventCalendarView`, `CalendarEvent`, `CalendarResource`, `EventCalendarOptions`, `EventCalendarDay`, `CalendarEventColumn`, `CalendarEventLane`, `CalendarEventLaneLayout`, `EventCalendarEdit`, `EventCalendarCreate`, `EventCalendarEditValidator`, `EventCalendarCreateValidator`, `EventCalendarEditCancel`, `EventCalendarEditCancelReason`, `EventCalendarBackgroundClick`, `EventCalendarLabels`, `CalendarAgendaDay`, `CalendarAgendaItem`, `EventCalendarComponent` and `EventCalendarExposed`.
+Related exported types: `EventCalendarView`, `EventCalendarViewName`, `CalendarEvent`, `CalendarResource`, `EventCalendarOptions`, `EventCalendarDay`, `CalendarEventColumn`, `CalendarEventLane`, `CalendarEventLaneLayout`, `EventCalendarEdit`, `EventCalendarCreate`, `EventCalendarEditValidator`, `EventCalendarCreateValidator`, `EventCalendarEditCancel`, `EventCalendarEditCancelReason`, `EventCalendarBackgroundClick`, `EventCalendarLabels`, `CalendarAgendaDay`, `CalendarAgendaItem`, `EventCalendarComponent` and `EventCalendarExposed`.
 
 ### Recurring events
 

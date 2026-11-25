@@ -174,7 +174,7 @@ export {
   layoutCalendarDayEvents, packCalendarEventLanes, layoutCalendarAgenda, validateCalendarEvents,
 } from './eventCalendar.js'
 export type {
-  EventCalendarView, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
+  EventCalendarView, EventCalendarViewName, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
   CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
   EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarBackgroundClick, EventCalendarLabels,
   CalendarAgendaItem, CalendarAgendaDay,
