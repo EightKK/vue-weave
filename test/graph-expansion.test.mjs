@@ -250,6 +250,10 @@ test('searchGraphNodes and filterGraph match text or predicates without mutating
   assert.throws(() => filterGraph(n, edges(['web', 'zz']), 'x'), Error)
   assert.throws(() => filterGraph(n, e, 'x', { neighborhood: -1 }), RangeError)
   assert.throws(() => filterGraph(n, e, 'x', { neighborhood: 1.5 }), { name: 'RangeError', message: 'neighborhood must be an integer ≥ 0 (got 1.5)' })
+  // An unknown search field throws in both functions; filterGraph silently matched nothing before.
+  assert.throws(() => searchGraphNodes(n, 'db', { fields: ['name'] }), { name: 'RangeError', message: 'Unknown search field' })
+  assert.throws(() => filterGraph(n, e, 'db', { fields: ['name'] }), { name: 'RangeError', message: 'Unknown search field' })
+  assert.deepEqual(filterGraph(n, e, node => node.id === 'web', { fields: ['name'] }).nodes.map(node => node.id), ['web'])
 })
 
 test('filterGraph keeps the union of the neighbourhoods of every match, walking each direction on its own', () => {
