@@ -3,104 +3,104 @@
   "tolerance": 0.05,
   "sizes": {
     "published/dist/core-[hash].js": {
-      "raw": 605681,
-      "gzip": 173237
+      "raw": 651261,
+      "gzip": 186946
     },
     "published/dist/core.js": {
-      "raw": 6829,
-      "gzip": 2466
+      "raw": 7042,
+      "gzip": 2514
     },
     "published/dist/index.js": {
-      "raw": 424323,
-      "gzip": 116847
+      "raw": 446027,
+      "gzip": 122745
     },
     "published/dist/style.css": {
-      "raw": 87607,
-      "gzip": 14440
+      "raw": 88950,
+      "gzip": 14647
     },
     "published/dist total (js + css)": {
-      "raw": 1124440,
-      "gzip": 306990
+      "raw": 1193280,
+      "gzip": 326852
     },
     "component/EventCalendar": {
-      "raw": 39806,
-      "gzip": 13221
+      "raw": 63179,
+      "gzip": 20798
     },
     "component/GanttChart": {
-      "raw": 170378,
-      "gzip": 56129
+      "raw": 171625,
+      "gzip": 56637
     },
     "component/GraphPalette": {
-      "raw": 10030,
-      "gzip": 4444
+      "raw": 10308,
+      "gzip": 4549
     },
     "component/NetworkGraph": {
-      "raw": 163055,
-      "gzip": 56622
+      "raw": 169071,
+      "gzip": 58850
     },
     "component/PropertyInspector": {
-      "raw": 28475,
-      "gzip": 9974
+      "raw": 28753,
+      "gzip": 10094
     },
     "component/TaskBoard": {
-      "raw": 23584,
-      "gzip": 8721
+      "raw": 35941,
+      "gzip": 13430
     },
     "component/TreeGrid": {
-      "raw": 56331,
-      "gzip": 19202
+      "raw": 82964,
+      "gzip": 28302
     },
     "composable/useAsyncGraphLayout": {
-      "raw": 23378,
-      "gzip": 9425
+      "raw": 23656,
+      "gzip": 9533
     },
     "composable/useEditHistory": {
       "raw": 990,
       "gzip": 476
     },
     "composable/useEditTransaction": {
-      "raw": 7688,
-      "gzip": 3045
+      "raw": 7966,
+      "gzip": 3137
     },
     "composable/useLinkedSelection": {
-      "raw": 14770,
-      "gzip": 5458
+      "raw": 15048,
+      "gzip": 5564
     },
     "composable/useTimelineView": {
-      "raw": 16782,
-      "gzip": 6044
+      "raw": 17060,
+      "gzip": 6150
     },
     "composable/useWindowedData": {
-      "raw": 13863,
-      "gzip": 5375
+      "raw": 14141,
+      "gzip": 5469
     },
     "core/scheduleTasks": {
-      "raw": 22957,
-      "gzip": 8311
+      "raw": 23261,
+      "gzip": 8422
     },
     "core/levelResources": {
-      "raw": 37878,
-      "gzip": 13205
+      "raw": 39222,
+      "gzip": 13665
     },
     "core/layoutLayeredGraph": {
-      "raw": 11456,
-      "gzip": 4885
+      "raw": 11734,
+      "gzip": 4988
     },
     "core/routeGraphEdges": {
-      "raw": 30200,
-      "gzip": 12344
+      "raw": 34656,
+      "gzip": 14007
     },
     "core/toMsProjectXml": {
-      "raw": 13606,
-      "gzip": 5365
+      "raw": 13884,
+      "gzip": 5467
     },
     "core/renderTimelineSvg": {
-      "raw": 35377,
-      "gzip": 13125
+      "raw": 35655,
+      "gzip": 13230
     },
     "core/flattenTreeGrid": {
-      "raw": 3599,
-      "gzip": 1783
+      "raw": 3877,
+      "gzip": 1890
     }
   }
 }
