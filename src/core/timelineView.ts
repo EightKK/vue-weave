@@ -1,7 +1,7 @@
 import { createTimelineRowTree, summarizeTimelineRows, timelineLabelColumnId, validateTimelineData } from './timeline.js'
 import { timelineWbsCodes } from './rowHierarchy.js'
 import type { TimeRange } from './timeline.js'
-import type { TimelineBar, TimelineColumn, TimelineDependency, TimelineRow } from './types.js'
+import type { TimelineBar, TimelineColumn, TimelineDependency, TimelineRow, TimelineSummary } from './types.js'
 
 export interface TimelineViewColumn {
   id: string
@@ -365,8 +365,10 @@ export function projectTimelineRows<R extends TimelineRow>(input: TimelineRowsIn
   }
   let kept: ReadonlySet<string> = rowIds
   const matched: string[] = []
+  // Columns receive the row summaries in the search, the filters and the sort, as the chart shows them.
+  let summaries: Map<string, TimelineSummary> | undefined
+  const summaryOf = (id: string) => (summaries ??= summarizeTimelineRows(tree, bars)).get(id)
   if (query || filters.length) {
-    const summaries = summarizeTimelineRows(tree, bars)
     for (const id of query ? state.search.columnIds ?? [] : []) {
       if (!known.has(id)) diagnostics.push({ code: 'unknown-column', id, message: 'Unknown search column in the saved view: ' + id })
     }
@@ -378,7 +380,7 @@ export function projectTimelineRows<R extends TimelineRow>(input: TimelineRowsIn
       else barLabels.set(bar.rowId, [bar.label])
     }
     const matches = (row: R) => {
-      const summary = summaries.get(row.id)
+      const summary = summaryOf(row.id)
       if (query) {
         const texts = searched.map(column => String(column.value(row, summary)))
         if (!state.search.columnIds) texts.push(row.label, row.detail ?? '', ...(barLabels.get(row.id) ?? []))
@@ -399,7 +401,7 @@ export function projectTimelineRows<R extends TimelineRow>(input: TimelineRowsIn
     const registered = input.sortRules && Object.hasOwn(input.sortRules, sort.ruleId) ? input.sortRules[sort.ruleId] : undefined
     const column = columnById.get(sort.ruleId)
     const compare: TimelineRowCompare<R> | undefined = registered
-      ?? (column ? (a, b) => compareValues(column.value(a), column.value(b)) : undefined)
+      ?? (column ? (a, b) => compareValues(column.value(a, summaryOf(a.id)), column.value(b, summaryOf(b.id))) : undefined)
       ?? (sort.ruleId === timelineLabelColumnId ? (a, b) => compareValues(a.label, b.label) : undefined)
     if (!compare) {
       diagnostics.push({ code: 'unknown-sort-rule', id: sort.ruleId, message: 'Unknown sort rule in the saved view: ' + sort.ruleId })

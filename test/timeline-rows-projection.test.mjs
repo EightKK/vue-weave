@@ -163,3 +163,18 @@ test('projectTimelineRows looks up sort rules by own key only, so columns named 
     assert.deepEqual(unknown.diagnostics.map(item => [item.code, item.id]), [['unknown-sort-rule', id]])
   }
 })
+
+test('a column sort reads the row summaries, as the search and the filters do', () => {
+  const tree = [
+    { id: 'p1', label: 'Phase 1' }, { id: 'a', parentId: 'p1', label: 'A' },
+    { id: 'p2', label: 'Phase 2' }, { id: 'b', parentId: 'p2', label: 'B' },
+  ]
+  const spans = [{ id: 'A', rowId: 'a', label: 'A', start: 50, end: 60 }, { id: 'B', rowId: 'b', label: 'B', start: 10, end: 20 }]
+  const start = [{ id: 'start', label: 'Start', width: 80, value: (row, summary) => summary?.start ?? -1 }]
+  const ascending = createTimelineViewState(start, { sort: [{ ruleId: 'start', direction: 'asc' }] })
+  assert.deepEqual(projectTimelineRows({ rows: tree, bars: spans, columns: start }, ascending).rows.map(row => row.id), ['p2', 'b', 'p1', 'a'])
+  const descending = { ...ascending, sort: [{ ruleId: 'start', direction: 'desc' }] }
+  assert.deepEqual(projectTimelineView({ rows: tree, bars: spans, columns: start }, descending).rows.map(row => row.id), ['p1', 'a', 'p2', 'b'])
+  // Without bars the columns receive no summary, so every value is -1 and the original order stays.
+  assert.deepEqual(projectTimelineRows({ rows: tree, columns: start }, ascending).rows.map(row => row.id), ['p1', 'a', 'p2', 'b'])
+})
