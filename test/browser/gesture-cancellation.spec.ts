@@ -383,6 +383,18 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   await page.mouse.up()
   await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
 
+  // A change of the `dir` prop during the drag is a direction change; switching back with nothing in flight emits nothing.
+  await pressAndMoveNode('N0004')
+  await page.evaluate(() => (window as any).__vw.setDir('rtl'))
+  await expect(page.locator('.vw-network')).toHaveClass(/vw-rtl/)
+  await expect(open).toHaveText('0')
+  await page.mouse.up()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+  await page.evaluate(() => (window as any).__vw.setDir(undefined))
+  await expect(page.locator('.vw-network')).not.toHaveClass(/vw-rtl/)
+  await expect(log).toHaveText('')
+  await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('1')
+
   // Background pan and box selection.
   const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
   await page.mouse.move(stage.x + 6, stage.y + 6)

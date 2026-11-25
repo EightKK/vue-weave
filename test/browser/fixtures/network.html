@@ -149,7 +149,10 @@
         positions.value = new Map(positions.value).set(ids[0], { x: current.x + 7, y: current.y + 3 })
       }
       const clearGestureLog = () => { gestureLog.value = [] }
-      window.__vw = { graph: () => graph.value, renders, reads, external, refresh, clearGestureLog }
+      // The `dir` prop starts from the dir parameter; __vw.setDir changes it at runtime.
+      const dir = ref(query.get('dir') ?? undefined)
+      const setDir = value => { dir.value = value }
+      window.__vw = { graph: () => graph.value, renders, reads, external, refresh, clearGestureLog, setDir }
 
       createApp({
         render: () => h('main', [
@@ -194,7 +197,7 @@
               onLabelEditRejected: (change, reason) => record('label-edit-rejected:' + JSON.stringify(reason), change),
               onDeleteRejected: (deletion, reason) => record('delete-rejected:' + JSON.stringify(reason), deletion),
             } : {},
-            ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
+            ref: graph, nodes, edges, groups, matchIds, height: 360, dir: dir.value,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
             draggable: query.get('draggable') === '1', connectable: query.get('connectable') === '1', positions: positions.value,
             selectedId: selectedId.value,
