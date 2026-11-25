@@ -43,6 +43,7 @@
 
           // A day view taller than its scroller, for edge auto-scroll and blank rejection reasons.
           const longEvents = shallowRef([{ id: 'standup', label: 'Standup', start: at('02:00'), end: at('03:00') }])
+          const longCalendar = ref()
           const longLog = ref('none')
           const rejectLongBlank = ref(false)
           const clock = time => new Date(time).toISOString().slice(11, 16)
@@ -91,9 +92,11 @@
             ]),
             h('section', { 'aria-label': 'Scrolling calendar fixture' }, [
               control('Reject edits with a blank reason', () => { rejectLongBlank.value = true }),
+              // scrollToTime reads the time of day of the time it is given, also of a day the view does not show.
+              control('Scroll to 03:00 the next day', () => longCalendar.value.scrollToTime(Date.parse('2026-11-12T03:00:00Z'))),
               h('output', { role: 'status', 'aria-label': 'Scrolling calendar log' }, longLog.value),
               h(EventCalendar, {
-                events: longEvents.value, date: at('10:00'), view: 'day', height: 240, labels: { region: 'Scrolling calendar' },
+                ref: longCalendar, events: longEvents.value, date: at('10:00'), view: 'day', height: 240, labels: { region: 'Scrolling calendar' },
                 validateEdit: () => rejectLongBlank.value ? '' : true,
                 onEdit: change => {
                   longEvents.value = longEvents.value.map(event => event.id === change.id ? { ...event, ...change.after } : event)

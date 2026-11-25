@@ -19,7 +19,7 @@
       // A TaskBoard of 5 cards in 4 columns, with two lanes unless `nolanes`. Every event is logged as a JSON line to the
       // "Board log" status. The parent applies moves, collapsed IDs and the selection. Query parameters: nolanes, rtl,
       // readonly, strict (validateCardMove refuses a column already at its WIP limit), slots (card, column-header, with its own
-      // collapse toggle under collapsible, and empty slots), german (labels), collapsible. Controls call the exposed focusCard and cancelMove, replace the cards
+      // collapse toggle under collapsible, and empty slots), german (labels), collapsible, ignoremoves (moves are logged but not applied). Controls call the exposed focusCard and cancelMove, replace the cards
       // with equal new objects and reload the page state.
       const query = new URLSearchParams(location.search)
       const lanes = query.has('nolanes') ? undefined : [{ id: 'web', label: 'Web', detail: 'Front end' }, { id: 'api', label: 'API' }]
@@ -69,7 +69,7 @@
               onCardActivate: id => record('activate', id),
               onBackgroundClick: click => record('background', click),
               onCardMove: change => {
-                cards.value = applyBoardCardMove(cards.value, change, { columns, lanes })
+                if (!query.has('ignoremoves')) cards.value = applyBoardCardMove(cards.value, change, { columns, lanes })
                 record('move', change.id, change.after.columnId, change.after.laneId ?? null, change.after.index, change.source)
               },
               onCardMoveRejected: (change, reason) => record('rejected', change.id, reason),

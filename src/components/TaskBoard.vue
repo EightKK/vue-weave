@@ -370,9 +370,16 @@ function pickUp(card: C) {
   dropTarget.value = targetOf(card.id)
   notice.value = `${messages.value.pickedUp} ${card.label}. ${describeTarget(dropTarget.value, card.id)}`
 }
-function cardBlur(card: C) {
+function cardBlur(event: FocusEvent, card: C) {
   const active = activeMove.value
   if (active?.source === 'keyboard' && active.id === card.id) cancelMove('blur')
+  // Focus that leaves the card for another place drops a pending focus request, so a move the parent applies later (or
+  // never) does not pull the focus back from wherever it went. A redraw that removes the focused card blurs it too; the
+  // check waits until that update is done, and a removed card keeps the request.
+  const element = event.target as Element
+  queueMicrotask(() => {
+    if (element.isConnected && document.activeElement !== element) pendingFocus.cancel(card.id)
+  })
 }
 function cardClick(card: C) {
   if (skipClick) {
@@ -596,7 +603,7 @@ defineExpose({
                   'vw-is-picked': activeMove?.id === item.card.id && activeMove.source === 'keyboard',
                 }]" :style="cardStyle(item.card)" :data-vw-card="item.card.id" :aria-label="item.card.label"
                   :aria-pressed="selectedId === item.card.id" :aria-describedby="cardDescribedBy(item.card)"
-                  @keydown="cardKeys($event, item.card)" @blur="cardBlur(item.card)" @click="cardClick(item.card)"
+                  @keydown="cardKeys($event, item.card)" @blur="cardBlur($event, item.card)" @click="cardClick(item.card)"
                   @pointerdown="pressCard($event, item.card)" @pointermove="moveCard" @pointerup="releaseCard" @pointercancel="releaseCard"
                   @lostpointercapture="lostCapture">
                   <slot name="card" :card="item.card" :selected="selectedId === item.card.id" :moving="activeMove?.id === item.card.id"

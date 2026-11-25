@@ -294,6 +294,7 @@ function onCellInput(field: InspectorListField<T>, index: number, column: 'units
   drafts.set(key, { text: (event.target as HTMLInputElement).value, base: drafts.get(key)?.base ?? rowsOf(field), field: field.id })
   errors.delete(key)
 }
+const decimalText = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i
 function commitCell(field: InspectorListField<T>, index: number, column: 'units' | 'lag') {
   const key = cellKey(field, index, column)
   const draft = drafts.get(key)
@@ -301,7 +302,8 @@ function commitCell(field: InspectorListField<T>, index: number, column: 'units'
   const unit = field.kind === 'dependencies' ? field.lagUnitLabel : undefined
   let text = draft.text.trim()
   if (unit && text.endsWith(unit)) text = text.slice(0, -unit.length).trim()
-  let number = text === '' ? NaN : Number(text)
+  // Decimal numbers only, as in number fields: `Number` alone would also read `0x10`, `0b11` and `0o7`.
+  let number = decimalText.test(text) ? Number(text) : NaN
   // A lag typed in display units (`lagUnitSize`) becomes whole model units.
   if (column === 'lag' && field.kind === 'dependencies' && field.lagUnitSize !== undefined) number = Math.round(number * field.lagUnitSize)
   return changeRow(field, index, column, number, draft.text)
@@ -382,14 +384,18 @@ function slotProps(row: FieldRow): PropertyInspectorFieldSlot<T> {
 }
 
 defineExpose({
-  /** Moves keyboard focus to the control of a field. Returns false when the field is not shown. */
+  /**
+   * Moves keyboard focus to the control of a field. Returns false when the field is not shown or its control cannot take
+   * the focus (the disabled control of a read-only checkbox, select or colour field).
+   */
   focusField(id: string) {
     const index = fields.value.findIndex(field => field.id === id)
     const target = index < 0 ? null : root.value?.querySelector<HTMLElement>(`[id="${inputId(index)}"]`)
-    // A list field's ID is on its table group: focus its first control.
-    const element = target?.dataset.vwList ? target.querySelector<HTMLElement>('select, input, button:not(:disabled)') : target
+    // A list field's ID is on its table group: focus its first control that can take the focus (a read-only table has
+    // disabled selects and read-only boxes).
+    const element = target?.dataset.vwList ? target.querySelector<HTMLElement>('select:not(:disabled), input:not(:disabled), button:not(:disabled)') : target
     element?.focus()
-    return Boolean(element)
+    return Boolean(element) && element === document.activeElement
   },
   /** Drops every draft and message without a proposal. */
   cancelEdits() {
