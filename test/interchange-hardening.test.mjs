@@ -173,6 +173,19 @@ test('toDrawio keeps a node label with line breaks whole, with or without a deta
   ])
 })
 
+test('toMermaid and toDrawio treat marker names of Object.prototype like other unknown markers', () => {
+  const edge = { id: 'e', from: 'a', to: 'b' }
+  const graph = markers => ({ nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ ...edge, ...markers }] })
+  // The lookup found inherited functions: Mermaid wrote `a --function toString() { [native code] } b`, draw.io
+  // `endArrow=toString;startArrow=Object;`.
+  for (const name of ['toString', 'constructor', '__proto__']) {
+    assert.equal(toMermaid(graph({ markerEnd: name, markerStart: name })), toMermaid(graph({ markerEnd: 'unknown', markerStart: 'unknown' })))
+    assert.equal(toDrawio(graph({ markerEnd: name, markerStart: name })), toDrawio(graph({ markerEnd: 'unknown', markerStart: 'unknown' })))
+  }
+  assert.match(toMermaid(graph({ markerEnd: 'toString' })), / {2}a --> b\n/)
+  assert.match(toDrawio(graph({ markerEnd: 'toString' })), /style="endArrow=classic;endFill=1;startArrow=none;"/)
+})
+
 test('toDrawio keeps a multi-line label whole when it holds characters XML does not allow', () => {
   // An unpaired surrogate made encodeURIComponent throw a URIError; a control character made the stored label differ
   // from the written value, so the label was split at its line break.

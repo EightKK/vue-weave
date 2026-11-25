@@ -49,7 +49,7 @@ const groupHeader = 30
 interface Rect { x: number; y: number; width: number; height: number }
 
 function markerStyle(end: 'start' | 'end', marker: GraphEdgeMarker) {
-  const { name, fill } = graphDrawioMarkers[marker] ?? graphDrawioMarkers.arrow
+  const { name, fill } = Object.hasOwn(graphDrawioMarkers, marker) ? graphDrawioMarkers[marker] : graphDrawioMarkers.arrow
   return `${end}Arrow=${name};` + (fill === undefined ? '' : `${end}Fill=${fill ? 1 : 0};`)
 }
 
