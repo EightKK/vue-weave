@@ -12,7 +12,7 @@ import { cachedDateFormat, zoneFormat, type CachedDateFormat } from './timeZone.
 import type { TimeRange } from './timeline.js'
 import type { PngExportOptions } from './types.js'
 import {
-  boxText, common, estimateTextWidth, isolateText, optionColour, sizeOption, svgDocument, tag, textOption, titleTag, toneColors,
+  boxText, common, estimateTextWidth, optionColour, sizeOption, svgDocument, tag, textOption, titleTag, toneColors,
   type SvgExportOptions, type SvgExportThemeInput, type Theme,
 } from './svgExportShared.js'
 
@@ -145,7 +145,7 @@ function eventName<E extends CalendarEvent>(event: E, frame: CalendarFrame<E>) {
  */
 function eventBox<E extends CalendarEvent>(
   event: E, box: { x: number; y: number; width: number; height: number },
-  lines: { text: string; y: number; size: number; weight?: number; inset?: number; fill?: string }[],
+  lines: { text: string; y: number; size: number; weight?: number; inset?: number; fill?: string; ltr?: boolean }[],
   frame: CalendarFrame<E>, plain = false,
 ) {
   const { theme, rtl } = frame
@@ -164,10 +164,22 @@ function eventBox<E extends CalendarEvent>(
   } else out += tag('rect', { x: stripeX, y: box.y, width: 3, height: box.height, fill: accent })
   for (const line of lines) {
     out += boxText(box, rtl, line.text, {
-      y: line.y, size: line.size, weight: line.weight, fill: line.fill ?? (plain ? theme.text : colors.ink), inset: line.inset ?? 7,
+      y: line.y, size: line.size, weight: line.weight, fill: line.fill ?? (plain ? theme.text : colors.ink), inset: line.inset ?? 7, ltr: line.ltr,
     })
   }
   return tag('g', { class: 'vw-calendar-event' }, out)
+}
+
+/**
+ * The lines of a time followed by a title on one line, as the component shows a short or month event. Left to right
+ * this is one run, `time title`. Right to left, as on screen, the time keeps its left-to-right order at the inline start
+ * (the right) and the title follows to its left: two runs, each anchored at its own estimated position, so the result
+ * does not depend on how a renderer resolves bidirectional text.
+ */
+function timeAndTitle(time: string, title: string, rtl: boolean, style: { y: number; size: number; weight: number }) {
+  if (!rtl) return [{ text: `${time} ${title}`, ...style }]
+  const inset = 7
+  return [{ text: time, ...style, inset, ltr: true }, { text: title, ...style, inset: inset + estimateTextWidth(time + ' ', style.size) }]
 }
 
 /** The day and week views: column headers, the all-day row, the hour gutter and the time grid with timed events. */
@@ -264,12 +276,11 @@ const timeGrid: ViewRenderer = frame => {
       const boxWidth = columnWidth / placed.columns - 3
       const inset = placed.column / placed.columns * columnWidth + 1
       const x = rtl ? columnX(index) + columnWidth - inset - boxWidth : columnX(index) + inset
-      // As on screen, the time keeps its left-to-right order in a right-to-left calendar and the title is isolated from it.
-      const time = isolateText(`${frame.timeText(event.start)}–${frame.timeText(event.end)}`, rtl, 'ltr')
+      const time = `${frame.timeText(event.start)}–${frame.timeText(event.end)}`
       const label = frame.eventLabel(event)
       const lines = height < 34
-        ? [{ text: `${time} ${isolateText(label, rtl, 'rtl')}`, y: height / 2 + 4, size: 11, weight: 650 }]
-        : [{ text: time, y: 13, size: 10.5 }, { text: label, y: 27, size: 11, weight: 650 }]
+        ? timeAndTitle(time, label, rtl, { y: height / 2 + 4, size: 11, weight: 650 })
+        : [{ text: time, y: 13, size: 10.5, ltr: true }, { text: label, y: 27, size: 11, weight: 650 }]
       out += eventBox(event, { x, y: bodyTop + clippedTop, width: boxWidth, height }, lines, frame)
     }
   })
@@ -338,10 +349,9 @@ const monthGrid: ViewRenderer = frame => {
       const x = rtl ? columnX(segment.endIndex - 1) : columnX(segment.startIndex)
       const box = { x: x + 2, y: y + monthHeader + segment.lane * laneHeight, width: (segment.endIndex - segment.startIndex) * columnWidth - 4, height: 20 }
       const timed = !inAllDayRow(event)
-      const text = timed
-        ? `${isolateText(frame.timeText(event.start), rtl, 'ltr')} ${isolateText(frame.eventLabel(event), rtl, 'rtl')}`
-        : frame.eventLabel(event)
-      out += eventBox(event, box, [{ text, y: 14, size: 11, weight: 650 }], frame, timed)
+      const style = { y: 14, size: 11, weight: 650 }
+      const lines = timed ? timeAndTitle(frame.timeText(event.start), frame.eventLabel(event), rtl, style) : [{ text: frame.eventLabel(event), ...style }]
+      out += eventBox(event, box, lines, frame, timed)
     }
     y += rowHeight
     out += tag('line', { x1: 0, y1: y - 0.5, x2: width, y2: y - 0.5, stroke: theme.border })
@@ -392,7 +402,7 @@ const agendaList: ViewRenderer = frame => {
       const label = frame.eventLabel(event)
       const resource = event.resourceId === undefined ? undefined : frame.resources?.find(entry => entry.id === event.resourceId)
       const lines: Parameters<typeof eventBox>[2] = [
-        { text: isolateText(agendaTime(item, frame), rtl, 'ltr'), y: 16, size: 11.5, inset: 8 },
+        { text: agendaTime(item, frame), y: 16, size: 11.5, inset: 8, ltr: true },
         { text: label, y: 16, size: 12, weight: 650, inset: labelInset },
       ]
       if (resource) lines.push({ text: resource.label, y: 16, size: 11, inset: labelInset + estimateTextWidth(label, 12) + 8, fill: theme.muted })

@@ -133,26 +133,40 @@ test('a right-to-left calendar export keeps times left to right and puts them be
   const time = (await button.locator('.vw-calendar-event-time').boundingBox())!
   const label = (await button.locator('.vw-calendar-event-label').boundingBox())!
   expect(time.x).toBeGreaterThan(label.x)
-  // The exported text, drawn by the browser: where each character of the time and the title lands.
-  const drawn = (view: string) => page.evaluate(async ({ view }) => {
+  // The exported text of the Late deploy event, drawn by the browser: where the time, its two ends and the title land.
+  // Each part is measured in the <text> run that holds it, from its first character to the end of its last.
+  const drawn = () => page.evaluate(() => {
     const host = document.createElement('div')
     host.innerHTML = (window as any).exportRefs.calendar.value.exportSvg({ heading: false })
     document.body.append(host)
-    const result: Record<string, number> = {}
-    for (const text of host.querySelectorAll('text')) {
-      const content = text.textContent ?? ''
-      const x = (part: string) => text.getStartPositionOfChar(content.indexOf(part)).x
-      if (view === 'month' && content.includes('Late deploy')) Object.assign(result, { time: x('21:00'), title: x('Late') })
-      if (view === 'week' && content.includes('21:00–22:00')) Object.assign(result, { start: x('21:00'), end: x('22:00') })
+    const event = [...host.querySelectorAll('g.vw-calendar-event')].find(group => group.querySelector('title')!.textContent!.startsWith('Late deploy,'))!
+    const place = (part: string) => {
+      const text = [...event.querySelectorAll('text')].find(text => text.textContent!.includes(part))
+      if (!text) return { start: NaN, end: NaN }
+      const index = text.textContent!.indexOf(part)
+      const last = text.getExtentOfChar(index + part.length - 1)
+      return { start: text.getStartPositionOfChar(index).x, end: last.x + last.width }
     }
+    const result = { time: place('21:00'), rangeEnd: place('22:00'), title: place('Late deploy') }
     host.remove()
     return result
-  }, { view })
-  const month = await drawn('month')
-  expect(month.time).toBeGreaterThan(month.title)
-  await calendar.getByRole('button', { name: 'Week', exact: true }).click()
-  const week = await drawn('week')
-  expect(week.start).toBeLessThan(week.end)
+  })
+  // The month shows the start time; the time grid and the agenda the range, before the title in reading order.
+  const month = await drawn()
+  expect(month.time.start).toBeGreaterThanOrEqual(month.title.end)
+  for (const view of ['Week', 'Agenda']) {
+    await calendar.getByRole('button', { name: view, exact: true }).click()
+    const drawnView = await drawn()
+    expect(drawnView.time.start, view).toBeLessThan(drawnView.rangeEnd.start)
+    if (view === 'Agenda') {
+      // As on screen, the agenda time column is at the right and the title to its left.
+      const entry = calendar.locator('.vw-calendar-agenda-event').filter({ hasText: 'Late deploy' })
+      const screenTime = (await entry.locator('.vw-calendar-agenda-time').boundingBox())!
+      const screenTitle = (await entry.locator('.vw-calendar-event-label').boundingBox())!
+      expect(screenTime.x).toBeGreaterThan(screenTitle.x)
+      expect(drawnView.time.start).toBeGreaterThanOrEqual(drawnView.title.end)
+    }
+  }
   expect(errors).toEqual([])
 })
 
