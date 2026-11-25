@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  createTreeGridIndex, nextTimelineSort, projectTreeGridRows, timelineLabelColumnId, treeGridCellText, treeGridDefaultLabels,
+  createTreeGridIndex, nextTimelineSort, projectTreeGridRows, renderTreeGridSvg, timelineLabelColumnId, treeGridCellText,
+  treeGridColumnOffsets, treeGridDefaultLabels,
 } from '@eightkk/vue-weave/core'
 import { TreeGrid } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
@@ -139,6 +140,39 @@ test('TreeGrid renders the opt-in header controls on the server and keeps its de
   assert.match(html, /aria-label="Resize column Price" aria-valuenow="80"/)
   assert.doesNotMatch(html, /vw-column-filter-popover|undefined|NaN/)
   assert.equal(await renderComponent(TreeGrid, { rows, columns, sortableColumns: true }), await renderComponent(TreeGrid, { rows, columns, sortableColumns: true }))
+})
+
+test('projectTreeGridRows reads sort rules by own key only: columns named like Object.prototype members sort and filter', () => {
+  const flat = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }]
+  for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    const own = [{ id, label: id, width: 70 }, { id: 'x', label: 'X', width: 30 }]
+    const ownCells = [
+      { rowId: 'a', columnId: id, value: 2 }, { rowId: 'b', columnId: id, value: 3 }, { rowId: 'c', columnId: id, value: 1 },
+    ]
+    const sort = [{ ruleId: id, direction: 'asc' }]
+    for (const sortRules of [undefined, {}]) {
+      const projected = projectTreeGridRows({ rows: flat, columns: own, cells: ownCells, sortRules }, { sort })
+      assert.deepEqual(ids(projected.rows), ['c', 'a', 'b'], `${id} with sortRules ${JSON.stringify(sortRules)}`)
+      assert.deepEqual(projected.diagnostics, [])
+    }
+    // A registered rule of that name (a computed key is an own property, even __proto__) still wins over the column.
+    const registered = projectTreeGridRows(
+      { rows: flat, columns: own, cells: ownCells, sortRules: { [id]: (x, y) => y.label.localeCompare(x.label) } }, { sort },
+    )
+    assert.deepEqual(ids(registered.rows), ['c', 'b', 'a'], id)
+    // Without such a column the ID is reported, not taken from the prototype.
+    const unknown = projectTreeGridRows({ rows: flat, columns: [], sortRules: {} }, { sort, filters: [{ columnId: id, text: 'x' }] })
+    assert.deepEqual(ids(unknown.rows), ['a', 'b', 'c'], id)
+    assert.deepEqual(unknown.diagnostics.map(item => [item.code, item.id]), [['unknown-column', id], ['unknown-sort-rule', id]])
+    // Filters by text and by value.
+    assert.deepEqual(ids(projectTreeGridRows({ rows: flat, columns: own, cells: ownCells }, { filters: [{ columnId: id, values: [3] }] }).rows), ['b'])
+    assert.deepEqual(ids(projectTreeGridRows({ rows: flat, columns: own, cells: ownCells }, { filters: [{ columnId: id, text: '1' }] }).rows), ['c'])
+    // Widths: the offsets and the export use the column's own width.
+    assert.deepEqual(treeGridColumnOffsets(own), [0, 70, 100])
+    const svg = renderTreeGridSvg(flat, own, { cells: ownCells, sort, sortRules: {}, treeColumnWidth: 100 })
+    assert.match(svg, /<svg[^>]* width="200"/)
+    assert.ok(svg.indexOf('>1<') < svg.indexOf('>2<') && svg.indexOf('>2<') < svg.indexOf('>3<'), id)
+  }
 })
 
 test('TreeGrid reports invalid header options through validation-error', async () => {

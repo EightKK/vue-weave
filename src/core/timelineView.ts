@@ -396,7 +396,7 @@ export function projectTimelineRows<R extends TimelineRow>(input: TimelineRowsIn
   // Sort siblings stably; ties keep the original order.
   const rules: { compare: TimelineRowCompare<R>; sign: number }[] = []
   for (const sort of state.sort) {
-    const registered = input.sortRules?.[sort.ruleId]
+    const registered = input.sortRules && Object.hasOwn(input.sortRules, sort.ruleId) ? input.sortRules[sort.ruleId] : undefined
     const column = columnById.get(sort.ruleId)
     const compare: TimelineRowCompare<R> | undefined = registered
       ?? (column ? (a, b) => compareValues(column.value(a), column.value(b)) : undefined)
