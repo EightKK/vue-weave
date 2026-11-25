@@ -108,6 +108,12 @@ test('EXDATE removes starts but counts towards COUNT, RDATE adds starts, and the
   assert.deepEqual(starts(series, { start: utc('2026-01-02T10:30'), end: utc('2026-01-04T10:00') }), ['2026-01-02T10:00'])
   // An RDATE-only set.
   assert.deepEqual(starts({ id: 'r', start, end: start, rdates: [utc('2026-02-01T09:00')] }), ['2026-01-01T10:00', '2026-02-01T09:00'])
+  // DTSTART is the first instance even with an UNTIL before it (RFC 5545 section 3.8.5.3); later instances are not.
+  assert.deepEqual(starts({ id: 'u', start, end: start + hour, rule: 'FREQ=DAILY;UNTIL=20251231T000000Z', rdates: [utc('2026-01-03T10:00')] }), [
+    '2026-01-01T10:00', '2026-01-03T10:00',
+  ])
+  assert.deepEqual(expandRecurringEvents([{ id: 'u', label: 'U', start, end: start + hour, recurrence: { rule: { frequency: 'weekly', until: start - 1 } } }], all)
+    .map(event => event.id), ['u:' + start])
   // Without COUNT a range far after the start is reached without walking the instances before it.
   assert.deepEqual(starts({ id: 'f', start, end: start + hour, rule: 'FREQ=DAILY' }, { start: utc('2090-06-01T00:00'), end: utc('2090-06-03T00:00') }, { maxOccurrences: 5 }), [
     '2090-06-01T10:00', '2090-06-02T10:00',

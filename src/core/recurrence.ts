@@ -37,7 +37,10 @@ export interface RecurrenceRule {
   interval?: number
   /** COUNT: the number of instances, the first one included. Not together with `until`. */
   count?: number
-  /** UNTIL in epoch milliseconds, inclusive: the last instance starts at or before it. Not together with `count`. */
+  /**
+   * UNTIL in epoch milliseconds, inclusive: the last rule instance starts at or before it (the first instance, DTSTART,
+   * is part of the set even when it is later). Not together with `count`.
+   */
   until?: number
   /** BYDAY. Ordinals are allowed with MONTHLY and YEARLY only. */
   byWeekday?: readonly RecurrenceWeekday[]
@@ -559,7 +562,8 @@ function visitRule(series: PreparedSeries, visit: (start: number, wall: number) 
     if (rule.count !== undefined && count >= rule.count) return
     count++
     const start = wall === series.startWall ? series.start : series.clock.instant(wall)
-    if (rule.until !== undefined && start > rule.until) return
+    // DTSTART is always the first instance (RFC 5545 section 3.8.5.3), even with an UNTIL before it.
+    if (rule.until !== undefined && start > rule.until && wall !== series.startWall) return
     if (!visit(start, wall)) return
   }
 }
