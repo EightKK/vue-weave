@@ -14,7 +14,7 @@ import type { ChartDirection } from '../core/types.js'
 import { elementWithData, usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
-import { renderEventCalendarSvg, type EventCalendarExportOptions, type EventCalendarPngExportOptions } from '../core/exportCalendarSvg.js'
+import { renderEventCalendarSvgWithColors, type EventCalendarExportOptions, type EventCalendarPngExportOptions } from '../core/exportCalendarSvg.js'
 import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 
 const minute = 60_000
@@ -995,14 +995,21 @@ function scrollToTime(time: number) {
 function exportSvg(options: EventCalendarExportOptions<E> = {}) {
   if (validationError.value) throw validationError.value
   const { includeSelection = true, theme, width, heading, ...rest } = options
-  // Event colours such as var(--brand) or currentColor are written as the colour computed on the calendar, since the
-  // standalone SVG has no stylesheet to resolve them; one whose var() has no value falls back to the tone, as on screen.
-  const events = withExportColours(root.value, resolve => props.events.map(event => {
-    if (event.color === undefined) return event
-    const color = resolve(event.color)
-    return color === event.color ? event : { ...event, color }
-  }))
-  return renderEventCalendarSvg(events, localDate.value, {
+  // Event colours such as var(--brand) or currentColor are written as the colour computed on the event's rendered button
+  // (the first one, for an event drawn in several segments), else on the calendar, since the standalone SVG has no
+  // stylesheet to resolve them; one whose var() has no value falls back to the tone, as on screen. The events themselves
+  // go to the renderer unchanged, so `eventLabel` receives the objects of `events`.
+  const rendered = new Map<string, Element>()
+  for (const element of root.value?.querySelectorAll<HTMLElement>('[data-vw-event]') ?? []) {
+    const id = element.dataset.vwEvent
+    if (id !== undefined && !rendered.has(id)) rendered.set(id, element)
+  }
+  const colours = withExportColours(root.value, resolve => {
+    const resolved = new Map<string, string | undefined>()
+    for (const event of props.events) if (event.color !== undefined) resolved.set(event.id, resolve(event.color, rendered.get(event.id)))
+    return resolved
+  })
+  return renderEventCalendarSvgWithColors(props.events, localDate.value, {
     ...rest,
     view: view.value, timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, agendaDays: props.agendaDays, locale: props.locale, resources: props.resources,
     dayStart: props.dayStart, dayEnd: props.dayEnd, hourHeight: props.hourHeight, maxMonthLanes: props.maxMonthLanes, now: props.now,
@@ -1015,7 +1022,7 @@ function exportSvg(options: EventCalendarExportOptions<E> = {}) {
     direction: isRtl() ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,
-  })
+  }, event => colours.has(event.id) ? colours.get(event.id) : event.color)
 }
 /** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
 async function exportPng(options: EventCalendarPngExportOptions<E> = {}) {

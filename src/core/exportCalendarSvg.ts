@@ -111,6 +111,8 @@ interface CalendarFrame<E extends CalendarEvent> {
   timeText: (time: number) => string
   shortDate: CachedDateFormat
   eventLabel: (event: E) => string
+  /** The accent colour of an event: its `color`, or the colour the component resolved for it. */
+  colorOf: (event: E) => string | undefined
 }
 
 type ViewRenderer = <E extends CalendarEvent>(frame: CalendarFrame<E>) => { height: number; body: string }
@@ -151,7 +153,7 @@ function eventBox<E extends CalendarEvent>(
   const { theme, rtl } = frame
   if (box.width <= 0 || box.height <= 0) return ''
   const colors = toneColors(theme, event.tone)
-  const accent = optionColour(event.color, 'the color of event ' + event.id, colors.solid)
+  const accent = optionColour(frame.colorOf(event), 'the color of event ' + event.id, colors.solid)
   let out = titleTag(eventName(event, frame))
   if (frame.selectedId === event.id) {
     out += tag('rect', { x: box.x - 2, y: box.y - 2, width: box.width + 4, height: box.height + 4, rx: 5, fill: 'none', stroke: theme.accent, 'stroke-width': 2 })
@@ -444,6 +446,23 @@ function viewTitle(view: EventCalendarViewName, date: number, days: EventCalenda
  * RangeError for a view it does not export. Runs without a DOM.
  */
 export function renderEventCalendarSvg<E extends CalendarEvent>(events: readonly E[], date: number, options: EventCalendarSvgOptions<E> = {}): string {
+  return renderCalendar(events, date, options, event => event.color)
+}
+
+/**
+ * `renderEventCalendarSvg` with the accent colour of each event from `colorOf` instead of its `color`. EventCalendar's
+ * `exportSvg` uses it to write colours it resolved in the browser while every callback still receives the event objects
+ * themselves. Internal: not exported from the entry points.
+ */
+export function renderEventCalendarSvgWithColors<E extends CalendarEvent>(
+  events: readonly E[], date: number, options: EventCalendarSvgOptions<E>, colorOf: (event: E) => string | undefined,
+): string {
+  return renderCalendar(events, date, options, colorOf)
+}
+
+function renderCalendar<E extends CalendarEvent>(
+  events: readonly E[], date: number, options: EventCalendarSvgOptions<E>, colorOf: (event: E) => string | undefined,
+): string {
   const view = options.view ?? 'week'
   const renderer = Object.hasOwn(viewRenderers, view) ? viewRenderers[view] : undefined
   if (!renderer) throw new RangeError('Unsupported event calendar export view: ' + String(view))
@@ -478,6 +497,7 @@ export function renderEventCalendarSvg<E extends CalendarEvent>(events: readonly
     timeText: options.formatTime ?? intlTimeFormatter({ locale, timeZone }),
     shortDate: cachedDateFormat(locale, { weekday: 'short', month: 'short', day: 'numeric', timeZone }),
     eventLabel: options.eventLabel ?? (event => event.label),
+    colorOf,
   }
   const drawn = renderer(frame)
   const height = top + drawn.height
