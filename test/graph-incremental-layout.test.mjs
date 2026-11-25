@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { nextTick, shallowRef } from 'vue'
 import {
-  applyGraphPositions, buildGraphLayoutRequests, createGraphExpansion, graphExpansionView, graphLayoutChangeMetrics, graphLayoutInputKey,
+  applyGraphPositions, buildGraphLayoutRequests, createGraphExpansion, graphExpansionView, graphLayoutChangeMetrics, graphLayoutInputKey, graphPathBounds,
   graphLayoutMessageFromJson, graphLayoutMessageToJson, layoutGraphIncrementally, layoutLayeredGraph, mergeGraphExpansionPage,
   parseGraphLayoutMessage, routeGraphEdges,
 } from '@eightkk/vue-weave/core'
@@ -156,6 +156,16 @@ test('layoutGraphIncrementally handles cycles and self-loops and is deterministi
   for (const { id } of allEdges) assert.equal(typeof first.paths.get(id), 'string')
   // v has a placed predecessor (u) and a placed successor (a); it goes after u.
   assert.ok(first.boxes.get('v').x > first.boxes.get('u').x)
+})
+
+test('layoutGraphIncrementally makes room for a self-loop on the right-most node', () => {
+  // The loop bulges 22.5 units past the box, more than the default padding of 20.
+  for (const direction of ['LR', 'TB', 'RL', 'BT']) {
+    const layout = layoutGraphIncrementally(nodes('a'), [edge('a', 'a')], new Map(), { direction })
+    const loop = graphPathBounds(layout.paths.get('aa'))
+    assert.ok(loop.x + loop.width <= layout.width, `${direction}: ${loop.x + loop.width} > ${layout.width}`)
+    assert.ok(loop.y + loop.height <= layout.height, direction)
+  }
 })
 
 test('layoutGraphIncrementally only moves unfixed positioned nodes in relaxed mode, by at most maxDisplacement', () => {

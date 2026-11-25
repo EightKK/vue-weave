@@ -226,8 +226,10 @@ function simplify(points: readonly GraphPoint[]): GraphPoint[] {
     const last = result[result.length - 1]
     if (last && Math.abs(last.x - point.x) < 1e-9 && Math.abs(last.y - point.y) < 1e-9) continue
     const before = result[result.length - 2]
-    // Drop a middle point on a straight axis-aligned run.
-    if (before && last && ((before.x === last.x && last.x === point.x) || (before.y === last.y && last.y === point.y))) result.pop()
+    // Drop a middle point on a straight axis-aligned run. Coordinates that differ only by rounding, such as the side
+    // anchors of two boxes at y 20 and 20.000000000000046, count as equal.
+    const same = (a: number, b: number) => Math.abs(a - b) < 1e-9
+    if (before && last && ((same(before.x, last.x) && same(last.x, point.x)) || (same(before.y, last.y) && same(last.y, point.y)))) result.pop()
     result.push({ x: point.x, y: point.y })
   }
   return result
@@ -349,11 +351,13 @@ function parallelWaypoint(source: GraphBox, target: GraphBox, slot: GraphParalle
   return { x: (a.x + b.x) / 2 + nx * offset, y: (a.y + b.y) / 2 + ny * offset }
 }
 
-// Unit directions of the segments of an axis-aligned route.
+// Unit directions of the segments of an axis-aligned route. Each segment runs along its longer axis, so a rounding
+// difference across it (an end at y 20.000000000000046 and a corner at y 20) does not make it diagonal.
 function segmentDirections(points: readonly GraphPoint[]) {
   const list: GraphPoint[] = []
   for (let i = 1; i < points.length; i++) {
-    list.push({ x: Math.sign(points[i]!.x - points[i - 1]!.x), y: Math.sign(points[i]!.y - points[i - 1]!.y) })
+    const dx = points[i]!.x - points[i - 1]!.x, dy = points[i]!.y - points[i - 1]!.y
+    list.push(Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) })
   }
   return list
 }
