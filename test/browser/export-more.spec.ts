@@ -248,6 +248,104 @@ test('exports write colours given as var() or currentColor as the computed colou
   expect(errors).toEqual([])
 })
 
+/** The fill of the accent stripe of event `label` in an EventCalendar export, and whether it has the selection outline. */
+async function exportedStripe(page: Page, label: string) {
+  return page.evaluate(label => {
+    const svg: string = (window as any).exportRefs.calendar.value.exportSvg()
+    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+    const group = [...doc.querySelectorAll('g.vw-calendar-event')].find(g => g.querySelector('title')?.textContent?.startsWith(label))!
+    const rects = [...group.querySelectorAll('rect')]
+    return { fill: rects.find(r => r.getAttribute('width') === '3')!.getAttribute('fill'), outlined: rects.some(r => r.getAttribute('fill') === 'none') }
+  }, label)
+}
+
+test('an event colour from a variable defined on the event button exports as on screen, also while selected and hovered', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExportFixture(page, '?colors')
+  const calendar = page.getByRole('region', { name: 'Export calendar' })
+  const scoped = calendar.getByRole('button', { name: /^Scoped/ })
+  // On screen the variable on the button wins over the one on the calendar's section.
+  await expect(scoped).toHaveCSS('border-inline-start-color', 'rgb(255, 105, 180)')
+  expect(await exportedStripe(page, 'Scoped')).toEqual({ fill: 'rgb(255, 105, 180)', outlined: false })
+  // Selected, focused and hovered: the stripe keeps its colour, and the export draws the selection outline itself.
+  await scoped.click()
+  await scoped.hover()
+  await expect(scoped).toHaveAttribute('aria-pressed', 'true')
+  expect(await exportedStripe(page, 'Scoped')).toEqual({ fill: 'rgb(255, 105, 180)', outlined: true })
+  // An event without a rendered button (as for an event the view does not render) is resolved on the calendar root.
+  const detached = await page.evaluate(() => {
+    const button = document.querySelector('[data-vw-event="scoped"]')!
+    const parent = button.parentNode!, next = button.nextSibling
+    button.remove()
+    const svg: string = (window as any).exportRefs.calendar.value.exportSvg()
+    parent.insertBefore(button, next)
+    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+    const group = [...doc.querySelectorAll('g.vw-calendar-event')].find(g => g.querySelector('title')?.textContent?.startsWith('Scoped'))!
+    return [...group.querySelectorAll('rect')].find(r => r.getAttribute('width') === '3')!.getAttribute('fill')
+  })
+  expect(detached).toBe('rgb(0, 128, 0)')
+  expect(await exportedStripe(page, 'Scoped')).toEqual({ fill: 'rgb(255, 105, 180)', outlined: true })
+  expect(errors).toEqual([])
+})
+
+test('exports hand the callbacks the same objects as the props and slots, so class instances keep their methods', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExportFixture(page, '?classes')
+  const calendar = page.getByRole('region', { name: 'Export calendar' })
+  // The props hold the parent's objects as passed (props are shallow), so the slots receive the originals themselves.
+  for (const view of ['Day', 'Week', 'Month', 'Agenda']) {
+    await calendar.getByRole('button', { name: view, exact: true }).click()
+    await expect(calendar.getByRole('button', { name: view, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    const result = await page.evaluate(() => {
+      const w = window as any
+      const originals = new Set(w.originals.events)
+      const seen: unknown[] = []
+      const svg: string = w.exportRefs.calendar.value.exportSvg({ eventLabel: (event: any) => { seen.push(event); return event.exportLabel() } })
+      return {
+        svg,
+        count: seen.length,
+        allOriginal: seen.every(event => originals.has(event)),
+        slotOriginal: [...w.received.calendar].every(event => originals.has(event)),
+        slotSeen: seen.filter(event => w.received.calendar.has(event)).length,
+      }
+    })
+    expect(result.svg, view).toContain('Exported ')
+    // The month view draws Classy in its "+N more" count, as on screen; the other views draw it with its hex colour as given.
+    if (view !== 'Month') {
+      expect(result.svg, view).toContain('Exported Classy')
+      expect(result.svg, view).toContain('fill="#c81e78"')
+    }
+    expect(result.count, view).toBeGreaterThan(0)
+    expect(result.allOriginal, view).toBe(true)
+    expect(result.slotOriginal, view).toBe(true)
+    expect(result.slotSeen, view).toBeGreaterThan(0)
+  }
+  const board = await page.evaluate(() => {
+    const w = window as any
+    const originals = new Set(w.originals.cards)
+    const seen: unknown[] = []
+    const svg: string = w.exportRefs.board.value.exportSvg({ cardLabel: (card: any) => { seen.push(card); return card.exportLabel() } })
+    return { svg, count: seen.length, allOriginal: seen.every(card => originals.has(card) && w.received.board.has(card)) }
+  })
+  expect(board.svg).toContain('Exported Search')
+  expect(board.count).toBe(4)
+  expect(board.allOriginal).toBe(true)
+  const grid = await page.evaluate(() => {
+    const w = window as any
+    const originals = new Set(w.originals.rows)
+    const onScreen = [...w.received.grid].every(row => originals.has(row))
+    w.received.grid.clear()
+    const svg: string = w.exportRefs.grid.value.exportSvg()
+    const exported = [...w.received.grid]
+    return { svg, onScreen, count: exported.length, allOriginal: exported.every(row => originals.has(row)) }
+  })
+  expect(grid.onScreen).toBe(true)
+  expect(grid.svg).toContain('item 299')
+  expect(grid.count).toBe(300)
+  expect(grid.allOriginal).toBe(true)
+  expect(errors).toEqual([])
+})
+
 test('exports mirror right-to-left components', async ({ page }) => {
   const errors = pageErrors(page)
   await openExportFixture(page, '?rtl=1')

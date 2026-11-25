@@ -277,3 +277,34 @@ test('the core renderers write colours that need a stylesheet as given, like ren
     assert.throws(() => renderEventCalendarSvg([{ id: 'b', start: at(11, 9), end: at(11, 10), label: 'B', color: colour }], date), RangeError, colour)
   }
 })
+
+test('the core renderers call back with the objects they were given, so class instances keep their methods', () => {
+  class Item {
+    constructor(fields) { Object.assign(this, fields) }
+    exportLabel() { return 'Exported ' + this.label }
+    get kind() { return 'item' }
+  }
+  const items = [
+    Object.freeze(new Item({ id: 'a', start: at(11, 9), end: at(11, 10), label: 'A', color: '#c81e78' })),
+    new Item({ id: 'b', start: at(10, 0), end: at(12, 0), label: 'B', allDay: true, color: 'var(--x)' }),
+  ]
+  for (const view of ['day', 'week', 'month', 'agenda']) {
+    const seen = []
+    const svg = renderEventCalendarSvg(items, date, { view, eventLabel: event => { seen.push(event); return event.exportLabel() } })
+    assert.match(svg, /Exported A/, view)
+    assert.match(svg, /fill="#c81e78"/, view)
+    assert.ok(seen.length > 0 && seen.every(event => items.includes(event)), view)
+  }
+  const cards = [new Item({ id: 'c', columnId: 'todo', label: 'C' })]
+  const seenCards = []
+  const board = renderTaskBoardSvg(cards, [{ id: 'todo', label: 'To do' }], { cardLabel: card => { seenCards.push(card); return card.exportLabel() } })
+  assert.match(board, /Exported C/)
+  assert.ok(seenCards.length > 0 && seenCards.every(card => card === cards[0]))
+  const rows = [new Item({ id: 'r', label: 'R', data: { qty: 3 } })]
+  const seenRows = []
+  const grid = renderTreeGridSvg(rows, [{ id: 'q', label: 'Q', width: 50, value: row => row.data.qty }], {
+    formatValue: (value, { row }) => { seenRows.push(row); return row.kind + ' ' + value },
+  })
+  assert.match(grid, /item 3/)
+  assert.ok(seenRows.length > 0 && seenRows.every(row => row === rows[0]))
+})

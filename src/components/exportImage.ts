@@ -34,41 +34,50 @@ export function readExportTheme(element: Element, overrides: SvgExportThemeInput
   return { ...theme, ...rest, tones } as SvgExportThemeInput
 }
 
+/** Colours that only a stylesheet can compute: a standalone SVG cannot paint `var()` or `currentColor`. */
+const needsStyle = /var\(|currentcolor/i
+
 /**
- * Calls `use` with a function that turns a CSS colour into the colour the page computes for it on `element`: a
- * `var()` reference, `currentColor` (the element's `color`), `light-dark()` or a relative colour becomes a plain
- * `rgb()` or `color()` value, which a standalone SVG and the PNG rasterized from it paint the same way. A value whose
- * `var()` has no value gives undefined, so the exporter uses its fallback colour, as the stylesheet does on screen. A
- * value the browser does not accept as a colour, and any value outside a browser, is returned unchanged for the core
- * renderer to check. Browser only: the colours are read from a hidden probe element that is removed afterwards.
+ * Calls `use` with a function that turns a CSS colour that needs a stylesheet (`var()` or `currentColor`) into the
+ * colour the page computes for it: on `on`, an element inside `element` such as the rendered item the colour belongs
+ * to, else on `element`. The result is a plain `rgb()` or `color()` value, which a standalone SVG and the PNG rasterized
+ * from it paint the same way. A value whose `var()` has no value gives undefined, so the exporter uses its fallback
+ * colour, as the stylesheet does on screen. Other values (hex, names, colour functions), values the browser does not
+ * accept as a colour, and any value outside a browser are returned unchanged, so the output for them stays the same.
+ * Browser only: the colours are read from hidden probe elements that are removed before this returns.
  */
-export function withExportColours<T>(element: Element | undefined, use: (resolve: (value: string | undefined) => string | undefined) => T): T {
+export function withExportColours<T>(
+  element: Element | undefined, use: (resolve: (value: string | undefined, on?: Element) => string | undefined) => T,
+): T {
   if (!element || typeof document === 'undefined' || typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return use(value => value)
-  let probe: HTMLElement | undefined, unset = ''
+  const probes = new Map<Element, { probe: HTMLElement; unset: string }>()
   const known = new Map<string, string | undefined>()
   try {
-    return use(value => {
+    return use((value, on = element) => {
       const colour = value?.trim()
-      if (!colour || !CSS.supports('color', colour)) return value
-      if (known.has(colour)) return known.get(colour)
-      if (!probe) {
-        // A custom property with a var() that has no value is invalid at computed-value time, so the fallback of the
-        // probe's colour then applies; that fallback marks the value as unset.
-        probe = document.createElement('span')
+      if (!colour || !needsStyle.test(colour) || !CSS.supports('color', colour)) return value
+      if (on === element && known.has(colour)) return known.get(colour)
+      let entry = probes.get(on)
+      if (!entry) {
+        // The probe inherits the custom properties and `color` of `on`. A custom property with a var() that has no
+        // value is invalid at computed-value time, so the fallback of the probe's colour then applies; that fallback
+        // marks the value as unset.
+        const probe = document.createElement('span')
         probe.setAttribute('aria-hidden', 'true')
         probe.style.display = 'none'
         probe.style.color = 'var(--vw-export-colour, rgba(1, 2, 3, 0.5))'
-        element.appendChild(probe)
-        unset = getComputedStyle(probe).color
+        on.appendChild(probe)
+        entry = { probe, unset: getComputedStyle(probe).color }
+        probes.set(on, entry)
       }
-      probe.style.setProperty('--vw-export-colour', colour)
-      const computed = getComputedStyle(probe).color
-      const resolved = computed && computed !== unset ? computed : undefined
-      known.set(colour, resolved)
+      entry.probe.style.setProperty('--vw-export-colour', colour)
+      const computed = getComputedStyle(entry.probe).color
+      const resolved = computed && computed !== entry.unset ? computed : undefined
+      if (on === element) known.set(colour, resolved)
       return resolved
     })
   } finally {
-    probe?.remove()
+    for (const { probe } of probes.values()) probe.remove()
   }
 }
 
