@@ -108,6 +108,12 @@ test('EXDATE removes starts but counts towards COUNT, RDATE adds starts, and the
   assert.deepEqual(starts(series, { start: utc('2026-01-02T10:30'), end: utc('2026-01-04T10:00') }), ['2026-01-02T10:00'])
   // An RDATE-only set.
   assert.deepEqual(starts({ id: 'r', start, end: start, rdates: [utc('2026-02-01T09:00')] }), ['2026-01-01T10:00', '2026-02-01T09:00'])
+  // DTSTART is the first instance even with an UNTIL before it (RFC 5545 section 3.8.5.3); later instances are not.
+  assert.deepEqual(starts({ id: 'u', start, end: start + hour, rule: 'FREQ=DAILY;UNTIL=20251231T000000Z', rdates: [utc('2026-01-03T10:00')] }), [
+    '2026-01-01T10:00', '2026-01-03T10:00',
+  ])
+  assert.deepEqual(expandRecurringEvents([{ id: 'u', label: 'U', start, end: start + hour, recurrence: { rule: { frequency: 'weekly', until: start - 1 } } }], all)
+    .map(event => event.id), ['u:' + start])
   // Without COUNT a range far after the start is reached without walking the instances before it.
   assert.deepEqual(starts({ id: 'f', start, end: start + hour, rule: 'FREQ=DAILY' }, { start: utc('2090-06-01T00:00'), end: utc('2090-06-03T00:00') }, { maxOccurrences: 5 }), [
     '2090-06-01T10:00', '2090-06-02T10:00',
@@ -259,6 +265,32 @@ test('applyRecurringEdit moves or deletes the whole series', () => {
   const change = { start: weekly + hour, end: weekly + 2 * hour }
   assert.deepEqual(applyRecurringEdit([meeting], first, change, 'following'), applyRecurringEdit([meeting], first, change, 'series'))
   assert.deepEqual(applyRecurringEdit([meeting, override, { id: 'other', label: 'Other', start: 0, end: 0 }], target, 'delete', 'series').map(event => event.id), ['other'])
+})
+
+test('an override that a series edit moves takes the ID of its new occurrence, so IDs stay unique', () => {
+  const start = utc('2026-11-02T09:00')
+  const week = 7 * day
+  let events = [{ id: 's', label: 'S', start, end: start + hour, recurrence: { rule: 'FREQ=WEEKLY;COUNT=4' } }]
+  events = applyRecurringEdit(events, { seriesId: 's', recurrenceId: start + week }, { start: start + week + hour, end: start + week + 2 * hour }, 'occurrence')
+  // The whole series moves a week later: the first occurrence now has the recurrenceId the override had.
+  events = applyRecurringEdit(events, { seriesId: 's', recurrenceId: start }, { start: start + week, end: start + week + hour }, 'series')
+  assert.deepEqual(events[1], {
+    id: 's:' + (start + 2 * week), label: 'S', start: start + week + hour, end: start + week + 2 * hour, seriesId: 's', recurrenceId: start + 2 * week,
+  })
+  const expanded = expandRecurringEvents(events, november)
+  assert.doesNotThrow(() => validateCalendarEvents(expanded))
+  assert.deepEqual(expanded.map(event => event.id), ['s:' + (start + week), 's:' + (start + 3 * week), 's:' + (start + 4 * week), 's:' + (start + 2 * week)])
+  // The occurrence whose ID the override had before can get an override of its own.
+  const again = applyRecurringEdit(events, { seriesId: 's', recurrenceId: start + week }, { start: start + week + 2 * hour, end: start + week + 3 * hour }, 'occurrence')
+  assert.doesNotThrow(() => validateCalendarEvents(expandRecurringEvents(again, november)))
+
+  // `following` moves later overrides to the new series under its ID; an override with an ID of its own keeps it.
+  const custom = { id: 'custom', label: 'C', start: start + 3 * week, end: start + 3 * week + hour, seriesId: 's', recurrenceId: start + 3 * week }
+  const split = applyRecurringEdit([...events.slice(0, 1), custom, events[1]], { seriesId: 's', recurrenceId: start + 2 * week },
+    { start: start + 2 * week + day, end: start + 2 * week + day + hour }, 'following', { newSeriesId: 'n' })
+  assert.deepEqual(split.filter(event => event.seriesId !== undefined).map(event => [event.id, event.seriesId, event.recurrenceId]), [
+    ['custom', 'n', start + 3 * week + day],
+  ])
 })
 
 test('applyRecurringEdit validates its input and never mutates it', () => {

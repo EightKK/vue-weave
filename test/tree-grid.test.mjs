@@ -220,6 +220,17 @@ test('row create, delete and move proposals apply immutably', () => {
   const lifted = deleteTreeGridRows({ rows, cells }, { ids: ['a'], includeDescendants: false })
   assert.deepEqual(lifted.rows.map(row => [row.id, row.parentId]), [['a1', undefined], ['a2', undefined], ['b', undefined], ['c', undefined], ['c1', 'c']])
   assert.throws(() => deleteTreeGridRows({ rows }, { ids: ['zz'], includeDescendants: true }), /Unknown row/)
+  // Nested deleted rows lift their children in place, in order.
+  const nested = [
+    { id: 'p', label: 'P' }, { id: 'q', label: 'Q', parentId: 'p' }, { id: 'q1', label: 'Q1', parentId: 'q' }, { id: 'q2', label: 'Q2', parentId: 'q' },
+    { id: 'r', label: 'R', parentId: 'p' }, { id: 's', label: 'S' },
+  ]
+  assert.deepEqual(deleteTreeGridRows({ rows: nested }, { ids: ['p', 'q'] }).rows.map(row => [row.id, row.parentId]),
+    [['q1', undefined], ['q2', undefined], ['r', undefined], ['s', undefined]])
+  // A row with more children than a call takes arguments.
+  const wide = [{ id: 'w', label: 'W' }, ...Array.from({ length: 200_000 }, (_, i) => ({ id: 'w' + i, label: 'W', parentId: 'w' }))]
+  const flatWide = deleteTreeGridRows({ rows: wide }, { ids: ['w'] }).rows
+  assert.deepEqual([flatWide.length, flatWide[0].id, flatWide.at(-1).id, flatWide[5].parentId], [200_000, 'w0', 'w199999', undefined])
 
   // Keys as in GanttChart: Alt+arrows reorder, Alt+Shift indents and outdents; apply with moveTimelineRow.
   assert.deepEqual(treeGridRowMoveForKey({ key: 'ArrowDown', altKey: true }, rows, 'a1'), { parentId: 'a', index: 1 })
