@@ -82,6 +82,80 @@ test('EventCalendar exports the whole time grid and the month view', async ({ pa
   expect(errors).toEqual([])
 })
 
+/** The texts of the shown agenda in reading order: per day its date, then each entry's time and title. */
+async function agendaOnScreen(page: Page) {
+  return page.getByRole('region', { name: 'Export calendar' }).locator('.vw-calendar-agenda-day').evaluateAll(days => days.flatMap(day => [
+    day.querySelector('.vw-calendar-agenda-date')!.textContent!.trim(),
+    ...[...day.querySelectorAll('.vw-calendar-agenda-event')].flatMap(entry => [
+      entry.querySelector('.vw-calendar-agenda-time')!.textContent!.trim(), entry.querySelector('.vw-calendar-event-label')!.textContent!.trim(),
+    ]),
+  ]))
+}
+
+test('EventCalendar exports the agenda it shows, with agendaDays, as SVG and PNG', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExportFixture(page)
+  const calendar = page.getByRole('region', { name: 'Export calendar' })
+  await calendar.getByRole('button', { name: 'Agenda', exact: true }).click()
+  await expect(calendar.getByRole('list', { name: 'Agenda' })).toBeVisible()
+  const screen = await agendaOnScreen(page)
+  expect(screen).toEqual([
+    'Tuesday, November 10, 2026', 'All day', 'Offsite',
+    'Wednesday, November 11, 2026', 'All day', 'Offsite', '02:00–03:00', 'Early call', '10:00–11:00', 'Design review',
+    'Thursday, November 12, 2026', '21:00–22:00', 'Late deploy',
+  ])
+  // The list scrolls inside 240 px, but the export draws every day of it, in the same order and words.
+  const agenda = await exportedSvg(page, 'calendar')
+  expect(agenda.parseError).toBe(false)
+  expect(agenda.texts).toEqual([await calendar.locator('.vw-calendar-title').textContent(), ...screen])
+  expect(agenda.svg).toContain('<title>Early call, Wed, Nov 11 02:00–03:00</title>')
+  const width = await calendar.evaluate(element => element.clientWidth)
+  expect(agenda.width).toBe(width)
+  const png = await exportedPng(page, 'calendar')
+  expect(png).toMatchObject({ type: 'image/png', width, height: agenda.height })
+
+  // With agendaDays the agenda covers that many days from the date, on screen and in the export.
+  await page.goto('/export-more-test/?view=agenda&agendaDays=1')
+  await expect(calendar.getByRole('list', { name: 'Agenda' })).toBeVisible()
+  const one = await agendaOnScreen(page)
+  expect(one[0]).toBe('Wednesday, November 11, 2026')
+  expect(one).not.toContain('Late deploy')
+  expect((await exportedSvg(page, 'calendar', { heading: false })).texts).toEqual(one)
+  expect(errors).toEqual([])
+})
+
+test('a right-to-left calendar export keeps times left to right and puts them before the title, as on screen', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExportFixture(page, '?rtl=1&view=month')
+  const calendar = page.getByRole('region', { name: 'Export calendar' })
+  // On screen the time of a month event is at its inline start, the right edge, and the title to its left.
+  const button = calendar.getByRole('button', { name: /^Late deploy,/ })
+  const time = (await button.locator('.vw-calendar-event-time').boundingBox())!
+  const label = (await button.locator('.vw-calendar-event-label').boundingBox())!
+  expect(time.x).toBeGreaterThan(label.x)
+  // The exported text, drawn by the browser: where each character of the time and the title lands.
+  const drawn = (view: string) => page.evaluate(async ({ view }) => {
+    const host = document.createElement('div')
+    host.innerHTML = (window as any).exportRefs.calendar.value.exportSvg({ heading: false })
+    document.body.append(host)
+    const result: Record<string, number> = {}
+    for (const text of host.querySelectorAll('text')) {
+      const content = text.textContent ?? ''
+      const x = (part: string) => text.getStartPositionOfChar(content.indexOf(part)).x
+      if (view === 'month' && content.includes('Late deploy')) Object.assign(result, { time: x('21:00'), title: x('Late') })
+      if (view === 'week' && content.includes('21:00–22:00')) Object.assign(result, { start: x('21:00'), end: x('22:00') })
+    }
+    host.remove()
+    return result
+  }, { view })
+  const month = await drawn('month')
+  expect(month.time).toBeGreaterThan(month.title)
+  await calendar.getByRole('button', { name: 'Week', exact: true }).click()
+  const week = await drawn('week')
+  expect(week.start).toBeLessThan(week.end)
+  expect(errors).toEqual([])
+})
+
 test('TreeGrid exports every displayed row, not only the rendered window', async ({ page }) => {
   const errors = pageErrors(page)
   await openExportFixture(page)

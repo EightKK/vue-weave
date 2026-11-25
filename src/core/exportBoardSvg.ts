@@ -114,7 +114,7 @@ function columnHeader<C extends TaskBoardCard>(
   const badgeWidth = Math.max(22, estimateTextWidth(count, 11) + 14)
   const badgeX = collapsed ? box.x + (box.width - badgeWidth) / 2 : rtl ? box.x + 4 : box.x + box.width - 4 - badgeWidth
   let out = titleTag([column.label, column.detail].filter(Boolean).join(' '))
-  out += badge(badgeX, 10, count, colors).markup
+  out += badge(badgeX, 10, count, colors, rtl).markup
   if (!collapsed) {
     const titleBox = { x: rtl ? box.x + badgeWidth + 12 : box.x, y: 0, width: Math.max(0, box.width - badgeWidth - 12), height: box.height }
     out += boxText(titleBox, rtl, column.label, { y: 24, size: 12, weight: 700, fill: theme.text, inset: 4 })
@@ -211,7 +211,7 @@ export function renderTaskBoardSvg<C extends TaskBoardCard>(
         const text = countText(counts, labels)
         const at = 4 + labelWidth + detailWidth
         const w = Math.max(22, estimateTextWidth(text, 11) + 14)
-        laneOut += badge(rtl ? box.x + box.width - at - w : box.x + at, y + 13, text, { fill: theme.surface, stroke: theme.border, ink: theme.text }).markup
+        laneOut += badge(rtl ? box.x + box.width - at - w : box.x + at, y + 13, text, { fill: theme.surface, stroke: theme.border, ink: theme.text }, rtl).markup
       }
       laneOut += tag('line', { x1: box.x, y1: y + laneHeadHeight - 0.5, x2: box.x + box.width, y2: y + laneHeadHeight - 0.5, stroke: theme.border, 'stroke-dasharray': '4 3' })
       body += tag('g', { class: 'vw-board-lane-head' }, laneOut)

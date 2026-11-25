@@ -249,10 +249,19 @@ test('clicks report the selection once and background-click names the cell or no
 })
 
 test('labels and slots replace the texts and the content of cards, headers and empty cells', async ({ page }) => {
-  const { errors, board, cell, card, announcement } = await openBoard(page, '?german&slots&collapsible')
-  // The column-header slot replaces the whole header, toggle included; the lane headers keep theirs.
+  const { errors, board, cell, card, announcement, lines } = await openBoard(page, '?german&slots&collapsible')
+  // The column-header slot replaces the whole header, toggle included; the lane headers keep theirs. The slot props
+  // carry the collapse state, the toggle and its name, so the slot draws its own toggle.
   await expect(board.getByRole('button', { name: 'Einklappen Web', exact: true })).toBeVisible()
-  await expect(board.getByRole('button', { name: /^Einklappen To do/ })).toHaveCount(0)
+  await expect(board.locator('.vw-board-column-head .vw-board-toggle')).toHaveCount(0)
+  const toggle = board.getByRole('button', { name: 'Einklappen To do', exact: true })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await toggle.click()
+  await expect(board.getByRole('button', { name: 'Ausklappen To do', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  await expect(board.locator('.vw-board-column-head').first()).toHaveClass(/vw-is-collapsed/)
+  await board.getByRole('button', { name: 'Ausklappen To do', exact: true }).click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  expect(await lines()).toEqual([['collapse-columns', ['todo']], ['collapse-columns', []]])
   await expect(board.locator('.slot-card').first()).toHaveText('Alpha in To do / Web')
   await expect(board.locator('.slot-head').nth(1)).toHaveText('Doing: 2 full')
   await expect(board.locator('.slot-head').nth(2)).toHaveText('Review: 0 short')

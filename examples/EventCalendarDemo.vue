@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 import {
   EventCalendar, applyRecurringEdit, eventCalendarRange, expandRecurringEvents, intlTimeFormatter, useEditHistory, type CalendarEvent,
   type CalendarResource, type EventCalendarCreate, type EventCalendarEdit, type EventCalendarView, type RecurringEditScope, type TimeRange,
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
+import { download } from './download'
 import StatusLine from './components/StatusLine.vue'
 import { unusedNumber } from './ids'
 import { useDemoLocale } from './i18n'
@@ -152,6 +153,14 @@ function redo() {
   history.redo()
   status.value = t({ en: 'Redid the booking change.', ja: '予約の変更をやり直しました。' })
 }
+// The export draws the shown view, the agenda included, with the calendar's labels, time zone and direction.
+const calendar = useTemplateRef('calendar')
+function exportSvg() {
+  const svg = calendar.value?.exportSvg({ title: t({ en: 'Room bookings', ja: '会議室の予約' }) })
+  if (!svg) return
+  download(svg, 'room-bookings.svg')
+  status.value = t({ en: `Exported SVG (${svg.length} characters).`, ja: `SVG を出力しました(${svg.length} 文字)。` })
+}
 </script>
 
 <template>
@@ -163,9 +172,10 @@ function redo() {
       <label>{{ t({ en: 'Recurring edits', ja: '繰り返し予定の編集' }) }} <select v-model="scope"><option value="occurrence">{{ t({ en: 'This event', ja: 'この予定' }) }}</option><option value="following">{{ t({ en: 'This and following', ja: 'この予定以降' }) }}</option><option value="series">{{ t({ en: 'All events', ja: 'すべての予定' }) }}</option></select></label>
       <button type="button" :disabled="!history.canUndo.value" @click="undo">{{ t({ en: 'Undo', ja: '元に戻す' }) }}</button>
       <button type="button" :disabled="!history.canRedo.value" @click="redo">{{ t({ en: 'Redo', ja: 'やり直す' }) }}</button>
+      <button type="button" @click="exportSvg">{{ t({ en: 'Export SVG', ja: 'SVG で出力' }) }}</button>
     </template>
     <EventCalendar
-      v-model:view="view" v-model:date="date" v-model:selected-id="selectedId" :views="views"
+      ref="calendar" v-model:view="view" v-model:date="date" v-model:selected-id="selectedId" :views="views"
       :events="shown" :resources="showRooms ? rooms : undefined" :now="now" :day-start="7" :day-end="20" :height="440"
       :readonly="readonly" creatable :labels="{ ...labels.eventCalendar, region: t({ en: 'Room bookings', ja: '会議室の予約' }) }" :locale="intlLocale" :dir="rtl ? 'rtl' : 'ltr'" :validate-edit="validateEdit" :validate-create="validateCreate"
       @edit="applyEdit" @edit-rejected="rejected" @create="create" @create-rejected="rejected" @select="select"
