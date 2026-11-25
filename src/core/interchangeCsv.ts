@@ -55,9 +55,19 @@ export interface TimelineCsvOptions {
 const csvHeaders: Record<TimelineCsvColumn, string> = { row: 'Row', wbs: 'WBS', bar: 'Bar', start: 'Start', end: 'End', progress: 'Progress' }
 
 /**
+ * A progress for the CSV table: the number itself, or for one that JavaScript writes with an exponent (below 1e-6, such
+ * as `5e-7`) its plain decimal text (`0.0000005`), which `timelineFromCsvTable` reads back to the same number.
+ */
+function plainDecimal(value: number): CsvCell {
+  const match = /^(\d)(?:\.(\d+))?e-(\d+)$/.exec(String(value))
+  return match ? '0.' + '0'.repeat(Number(match[3]) - 1) + match[1] + (match[2] ?? '') : value
+}
+
+/**
  * A table for `toCsv`: a header record and one record per bar, ordered by row in tree preorder and then by bar input
  * order. Cells are the row label, the row's WBS code (`timelineWbsCodes`), the bar label, the formatted start and end
- * and the progress from 0 to 1 (empty without progress). Throws an Error for invalid rows, a bar of an unknown row and
+ * and the progress from 0 to 1 (empty without progress; in plain decimal notation, so a progress below 1e-6 is a decimal
+ * string such as `'0.0000005'`). Throws an Error for invalid rows, a bar of an unknown row and
  * an unknown column.
  */
 export function timelineCsvTable(
@@ -79,7 +89,8 @@ export function timelineCsvTable(
   for (const { row } of tree) {
     for (const bar of byRow.get(row.id) ?? []) {
       const cells: Record<TimelineCsvColumn, CsvCell> = {
-        row: row.label, wbs: codes.get(row.id), bar: bar.label, start: format(bar.start), end: format(bar.end), progress: bar.progress,
+        row: row.label, wbs: codes.get(row.id), bar: bar.label, start: format(bar.start), end: format(bar.end),
+        progress: bar.progress === undefined ? undefined : plainDecimal(bar.progress),
       }
       table.push(columns.map(column => cells[column]))
     }

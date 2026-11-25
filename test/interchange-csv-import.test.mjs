@@ -66,6 +66,16 @@ test('timelineFromCsvTable reverses timelineCsvTable through toCsv and parseCsv'
   assert.equal(toCsv(timelineCsvTable(result.rows, result.bars)), csv)
 })
 
+test('a progress below 1e-6 is written in plain decimal notation and reads back to the same number', () => {
+  const rows = [{ id: 'r', label: 'R' }]
+  const progresses = [5e-7, 1.2345e-10, 1e-6, 0.000001234, 0.5]
+  const bars = progresses.map((progress, i) => ({ id: 'b' + i, rowId: 'r', label: 'B' + i, start: 0, end: hour, progress }))
+  const table = timelineCsvTable(rows, bars)
+  assert.deepEqual(table.slice(1).map(record => record[5]), ['0.0000005', '0.00000000012345', 0.000001, 0.000001234, 0.5])
+  const back = timelineFromCsvTable(parseCsv(toCsv(table)), { parseTime })
+  assert.deepEqual(back.bars.map(bar => bar.progress), progresses)
+})
+
 test('timelineFromCsvTable supports custom headers, column lists, labels without WBS and missing parents', () => {
   const custom = timelineFromCsvTable(parseCsv('Task;Operation;Begin;Finish;Notes\nCut;Line A;0;5;x\nPack;Line B;5;9;\nShip;Line A;9;9;\n\n', { delimiter: ';' }), {
     parseTime: Number, headers: { bar: 'task', row: 'Operation', start: 'Begin', end: 'Finish' },
