@@ -2311,6 +2311,9 @@ validateCardMove?: TaskBoardCardMoveValidator;
 'column-header'(props: {
     column: TaskBoardColumn;
     status: TaskBoardColumnStatus;
+    collapsed: boolean;
+    toggle: () => void;
+    toggleLabel: string;
 }): unknown;
 card(props: {
     card: C;
@@ -3298,7 +3301,7 @@ interface EventCalendarPngExportOptions<E extends CalendarEvent = CalendarEvent>
 ### `EventCalendarSvgLabels`
 
 ```ts
-type EventCalendarSvgLabels = Pick<EventCalendarLabels, 'allDay' | 'more' | 'resources' | 'now'> & Pick<Required<EventCalendarLabels>, 'recurring'>;
+type EventCalendarSvgLabels = Pick<EventCalendarLabels, 'allDay' | 'more' | 'resources' | 'now'> & Pick<Required<EventCalendarLabels>, 'recurring'> & Partial<Pick<EventCalendarLabels, 'empty'>>;
 ```
 
 ### `EventCalendarSvgOptions`

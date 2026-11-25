@@ -89,6 +89,25 @@ test('agenda entries select by click and Space, open by double click and Enter, 
   expect(errors).toEqual([])
 })
 
+test('the demo exports the shown agenda as an SVG file', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises')
+  const { errors, calendar, status, button } = await openCalendar(page)
+  await button('Agenda').click()
+  await expect(calendar.getByRole('list', { name: 'Agenda', exact: true })).toBeVisible()
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export SVG', exact: true }).click()
+  const file = await pending
+  expect(file.suggestedFilename()).toBe('room-bookings.svg')
+  const text = await readFile((await file.path())!, 'utf8')
+  expect(text).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+  expect(text).toContain('<title>Room bookings</title>')
+  for (const label of ['Nov 9 – 15, 2026', 'Tuesday, November 10, 2026', 'Lab audit', '16:00–16:30', 'Weekly sync', '18:00–', '–09:00', 'Server migration']) {
+    expect(text).toContain('>' + label + '<')
+  }
+  await expect(status).toHaveText(/^Exported SVG \(\d+ characters\)\.$/)
+  expect(errors).toEqual([])
+})
+
 test('touch: a swipe on empty time grid scrolls it without a proposal or a cancel, and a tap books a slot without selecting it', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', realTouchChromiumOnly)
   const { errors, calendar, status } = await openCalendar(page)

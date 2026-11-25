@@ -1,10 +1,10 @@
-// SVG export of an event calendar (EventCalendar): the day and week time grids with their all-day row and the month
-// grid, laid out with the same core functions as the component (`eventCalendarDays`, `layoutCalendarDayEvents`,
-// `packCalendarEventLanes`), so the export matches the screen. Each view has its own renderer in `viewRenderers`; a
+// SVG export of an event calendar (EventCalendar): the day and week time grids with their all-day row, the month grid
+// and the agenda list, laid out with the same core functions as the component (`eventCalendarDays`,
+// `layoutCalendarDayEvents`, `packCalendarEventLanes`, `layoutCalendarAgenda`), so the export matches the screen. Each view has its own renderer in `viewRenderers`; a
 // view without one is rejected. Free of Vue and the DOM.
 import {
-  eventCalendarDays, eventCalendarTimeOfDay, layoutCalendarDayEvents, packCalendarEventLanes, validateCalendarEvents,
-  type CalendarEvent, type CalendarResource, type EventCalendarDay, type EventCalendarLabels, type EventCalendarOptions,
+  eventCalendarDays, eventCalendarTimeOfDay, layoutCalendarAgenda, layoutCalendarDayEvents, packCalendarEventLanes,
+  validateCalendarEvents, type CalendarAgendaItem, type CalendarEvent, type CalendarResource, type EventCalendarDay, type EventCalendarLabels, type EventCalendarOptions,
   type EventCalendarView,
 } from './eventCalendar.js'
 import { intlTimeFormatter } from './calendarFormat.js'
@@ -12,7 +12,7 @@ import { cachedDateFormat, zoneFormat, type CachedDateFormat } from './timeZone.
 import type { TimeRange } from './timeline.js'
 import type { PngExportOptions } from './types.js'
 import {
-  boxText, common, estimateTextWidth, optionColour, sizeOption, svgDocument, tag, textOption, titleTag, toneColors,
+  boxText, common, estimateTextWidth, isolateText, optionColour, sizeOption, svgDocument, tag, textOption, titleTag, toneColors,
   type SvgExportOptions, type SvgExportThemeInput, type Theme,
 } from './svgExportShared.js'
 
@@ -24,14 +24,16 @@ const laneHeight = 22
 const lanePadding = 6
 const monthHeader = 26
 
-/** The EventCalendar texts that the calendar export draws. */
+/** The EventCalendar texts that the calendar export draws. `empty` is the text of an agenda without events. */
 export type EventCalendarSvgLabels = Pick<EventCalendarLabels, 'allDay' | 'more' | 'resources' | 'now'> & Pick<Required<EventCalendarLabels>, 'recurring'>
+  & Partial<Pick<EventCalendarLabels, 'empty'>>
+type SvgLabels = Required<EventCalendarSvgLabels>
 
 /** Options of `renderEventCalendarSvg`. `E` types the events that `eventLabel` receives. */
 export interface EventCalendarSvgOptions<E extends CalendarEvent = CalendarEvent> extends SvgExportOptions, EventCalendarOptions {
   /**
-   * `day`, `week` or `month`, as EventCalendar `view`. Default `week`. Other views throw a RangeError (`Unsupported
-   * event calendar export view`).
+   * `day`, `week`, `month` or `agenda`, as EventCalendar `view`. Default `week`. Other values throw a RangeError
+   * (`Unsupported event calendar export view`). The length of the agenda follows `agendaDays`, as on screen.
    */
   view?: EventCalendarView
   /** BCP 47 locale of the labels. Default `en-US`. */
@@ -43,7 +45,10 @@ export interface EventCalendarSvgOptions<E extends CalendarEvent = CalendarEvent
   dayEnd?: number
   /** Height of one hour of the time grid in pixels. Default 48. */
   hourHeight?: number
-  /** Width of the document in pixels; the day columns share it after the hour gutter. Default 896. */
+  /**
+   * Width of the document in pixels; the day columns share it after the hour gutter. Default 896. The agenda puts the
+   * date beside the events from 700 pixels and above them below, like the component's narrow layout.
+   */
   width?: number
   /** Lanes of events per week of the month view before "+N more". Default 3. */
   maxMonthLanes?: number
@@ -79,7 +84,9 @@ export interface EventCalendarExportOptions<E extends CalendarEvent = CalendarEv
 
 export interface EventCalendarPngExportOptions<E extends CalendarEvent = CalendarEvent> extends EventCalendarExportOptions<E>, PngExportOptions {}
 
-const defaultLabels: EventCalendarSvgLabels = { allDay: 'All day', more: 'more', resources: 'Resources', now: 'Now', recurring: 'Recurring' }
+const defaultLabels: SvgLabels = {
+  allDay: 'All day', more: 'more', resources: 'Resources', now: 'Now', recurring: 'Recurring', empty: 'No events to display',
+}
 
 /** Everything a view renderer needs: validated options, formats and the shared drawing helpers. */
 interface CalendarFrame<E extends CalendarEvent> {
@@ -87,7 +94,7 @@ interface CalendarFrame<E extends CalendarEvent> {
   view: EventCalendarView
   date: number
   days: EventCalendarDay[]
-  zone: { timeZone: string; weekStartsOn: number }
+  zone: { timeZone: string; weekStartsOn: number; agendaDays?: number }
   resources?: readonly CalendarResource[]
   theme: Theme
   rtl: boolean
@@ -99,7 +106,7 @@ interface CalendarFrame<E extends CalendarEvent> {
   maxMonthLanes: number
   now?: number
   selectedId?: string
-  labels: EventCalendarSvgLabels
+  labels: SvgLabels
   locale: string | readonly string[]
   timeText: (time: number) => string
   shortDate: CachedDateFormat
@@ -137,7 +144,8 @@ function eventName<E extends CalendarEvent>(event: E, frame: CalendarFrame<E>) {
  * stripe and text only.
  */
 function eventBox<E extends CalendarEvent>(
-  event: E, box: { x: number; y: number; width: number; height: number }, lines: { text: string; y: number; size: number; weight?: number }[],
+  event: E, box: { x: number; y: number; width: number; height: number },
+  lines: { text: string; y: number; size: number; weight?: number; inset?: number; fill?: string }[],
   frame: CalendarFrame<E>, plain = false,
 ) {
   const { theme, rtl } = frame
@@ -155,7 +163,9 @@ function eventBox<E extends CalendarEvent>(
       + tag('rect', { x: stripeX + 2.4, y: box.y, width: 1.2, height: box.height, fill: accent })
   } else out += tag('rect', { x: stripeX, y: box.y, width: 3, height: box.height, fill: accent })
   for (const line of lines) {
-    out += boxText(box, rtl, line.text, { y: line.y, size: line.size, weight: line.weight, fill: plain ? theme.text : colors.ink, inset: 7 })
+    out += boxText(box, rtl, line.text, {
+      y: line.y, size: line.size, weight: line.weight, fill: line.fill ?? (plain ? theme.text : colors.ink), inset: line.inset ?? 7,
+    })
   }
   return tag('g', { class: 'vw-calendar-event' }, out)
 }
@@ -254,10 +264,11 @@ const timeGrid: ViewRenderer = frame => {
       const boxWidth = columnWidth / placed.columns - 3
       const inset = placed.column / placed.columns * columnWidth + 1
       const x = rtl ? columnX(index) + columnWidth - inset - boxWidth : columnX(index) + inset
-      const time = `${frame.timeText(event.start)}–${frame.timeText(event.end)}`
+      // As on screen, the time keeps its left-to-right order in a right-to-left calendar and the title is isolated from it.
+      const time = isolateText(`${frame.timeText(event.start)}–${frame.timeText(event.end)}`, rtl, 'ltr')
       const label = frame.eventLabel(event)
       const lines = height < 34
-        ? [{ text: `${time} ${label}`, y: height / 2 + 4, size: 11, weight: 650 }]
+        ? [{ text: `${time} ${isolateText(label, rtl, 'rtl')}`, y: height / 2 + 4, size: 11, weight: 650 }]
         : [{ text: time, y: 13, size: 10.5 }, { text: label, y: 27, size: 11, weight: 650 }]
       out += eventBox(event, { x, y: bodyTop + clippedTop, width: boxWidth, height }, lines, frame)
     }
@@ -327,7 +338,9 @@ const monthGrid: ViewRenderer = frame => {
       const x = rtl ? columnX(segment.endIndex - 1) : columnX(segment.startIndex)
       const box = { x: x + 2, y: y + monthHeader + segment.lane * laneHeight, width: (segment.endIndex - segment.startIndex) * columnWidth - 4, height: 20 }
       const timed = !inAllDayRow(event)
-      const text = timed ? `${frame.timeText(event.start)} ${frame.eventLabel(event)}` : frame.eventLabel(event)
+      const text = timed
+        ? `${isolateText(frame.timeText(event.start), rtl, 'ltr')} ${isolateText(frame.eventLabel(event), rtl, 'rtl')}`
+        : frame.eventLabel(event)
       out += eventBox(event, box, [{ text, y: 14, size: 11, weight: 650 }], frame, timed)
     }
     y += rowHeight
@@ -336,13 +349,70 @@ const monthGrid: ViewRenderer = frame => {
   return { height: y - top, body: out }
 }
 
+/** The time column of an agenda entry, as EventCalendar writes it: "All day", a time, a range, or an open end. */
+function agendaTime<E extends CalendarEvent>(item: CalendarAgendaItem, frame: CalendarFrame<E>) {
+  if (item.allDay) return frame.labels.allDay
+  if (item.start === item.end) return frame.timeText(item.start)
+  return `${item.continuesBefore ? '' : frame.timeText(item.start)}–${item.continuesAfter ? '' : frame.timeText(item.end)}`
+}
+
+/**
+ * The agenda: per day with events, the long date and the day's entries (all-day first, a multi-day event on each day
+ * it covers), each with its time, title and resource; the empty text when no day has events. From 700 pixels the date
+ * sits beside the entries, below that above them, as the component's grid and its narrow layout.
+ */
+const agendaList: ViewRenderer = frame => {
+  const { theme, rtl, days, width, top, now, labels } = frame
+  const groups = layoutCalendarAgenda(frame.events, days).filter(day => day.items.length)
+  if (!groups.length) {
+    return { height: 64, body: boxText({ x: 0, y: top, width, height: 64 }, rtl, labels.empty, { y: 36, size: 12, fill: theme.muted, align: 'center' }) }
+  }
+  const byId = new Map(frame.events.map(event => [event.id, event]))
+  const longDate = cachedDateFormat(frame.locale, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: frame.zone.timeZone })
+  const padX = 12, padY = 8, entryHeight = 24, entryGap = 4, dateHeight = 24
+  const wide = width >= 700
+  const dateWidth = wide ? Math.min(156, Math.max(96, (width - 2 * padX) * 0.3)) : width - 2 * padX
+  const listX = wide ? padX + dateWidth + 12 : padX
+  const listWidth = Math.max(0, width - padX - listX)
+  const inlineX = (x: number, w: number) => rtl ? width - x - w : x
+  // The time column is 8.5em of the 12 px entry text, after the 8 px padding; the title follows after a 10 px gap.
+  const timeWidth = 102, labelInset = 8 + timeWidth + 10
+  let out = '', y = top
+  for (const group of groups) {
+    const day = days[group.index]!
+    const entriesTop = wide ? y + padY : y + padY + dateHeight + 4
+    const entriesHeight = group.items.length * entryHeight + (group.items.length - 1) * entryGap
+    const height = (wide ? Math.max(dateHeight, entriesHeight) : dateHeight + 4 + entriesHeight) + 2 * padY
+    out += boxText({ x: inlineX(padX, dateWidth), y: y + padY, width: dateWidth, height: dateHeight }, rtl, longDate.format(day.start), {
+      y: 16, size: 12, weight: 700, fill: isToday(now, day) ? theme.accent : theme.text,
+    })
+    group.items.forEach((item, index) => {
+      const event = byId.get(item.id)!
+      const box = { x: inlineX(listX, listWidth), y: entriesTop + index * (entryHeight + entryGap), width: listWidth, height: entryHeight }
+      const label = frame.eventLabel(event)
+      const resource = event.resourceId === undefined ? undefined : frame.resources?.find(entry => entry.id === event.resourceId)
+      const lines: Parameters<typeof eventBox>[2] = [
+        { text: isolateText(agendaTime(item, frame), rtl, 'ltr'), y: 16, size: 11.5, inset: 8 },
+        { text: label, y: 16, size: 12, weight: 650, inset: labelInset },
+      ]
+      if (resource) lines.push({ text: resource.label, y: 16, size: 11, inset: labelInset + estimateTextWidth(label, 12) + 8, fill: theme.muted })
+      out += eventBox(event, box, lines, frame)
+    })
+    y += height
+    out += tag('line', { x1: 0, y1: y - 0.5, x2: width, y2: y - 0.5, stroke: theme.border })
+  }
+  return { height: y - top, body: tag('g', { class: 'vw-calendar-agenda' }, out) }
+}
+
 /** The renderer of each view the export supports. A new view adds its renderer here. */
-const viewRenderers: Readonly<Partial<Record<string, ViewRenderer>>> = Object.freeze({ day: timeGrid, week: timeGrid, month: monthGrid })
+const viewRenderers: Readonly<Partial<Record<string, ViewRenderer>>> = Object.freeze({
+  day: timeGrid, week: timeGrid, month: monthGrid, agenda: agendaList,
+})
 
 /** The title of the EventCalendar toolbar for a view. */
 function viewTitle(view: EventCalendarView, date: number, days: EventCalendarDay[], locale: string | readonly string[], timeZone: string) {
   const format = (options: Intl.DateTimeFormatOptions) => cachedDateFormat(locale, { ...options, timeZone })
-  if (view === 'day') return format({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(days[0]!.start)
+  if (view === 'day' || days.length === 1) return format({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(days[0]!.start)
   if (view === 'month') return format({ year: 'numeric', month: 'long' }).format(date)
   return format({ year: 'numeric', month: 'short', day: 'numeric' }).formatRange(days[0]!.start, days[days.length - 1]!.start)
 }
@@ -351,8 +421,10 @@ function viewTitle(view: EventCalendarView, date: number, days: EventCalendarDay
  * Build a standalone SVG document of one view of an event calendar with the default EventCalendar rendering: for `day`
  * and `week`, the column headers (one per resource in the day view with `resources`), the all-day row and the whole
  * time grid from `dayStart` to `dayEnd` with the timed events side by side and the now line; for `month`, the weekday
- * names and the weeks with their event lanes and "+N more". Events are placed with `layoutCalendarDayEvents` and
- * `packCalendarEventLanes`, so they sit where the component draws them. Pass concrete events: expand recurring series with
+ * names and the weeks with their event lanes and "+N more"; for `agenda`, the days with events (over a week, or
+ * `agendaDays` days) with their entries in the order of `layoutCalendarAgenda`, or the empty text. Events are placed
+ * with `layoutCalendarDayEvents`, `packCalendarEventLanes` and `layoutCalendarAgenda`, so they sit where the component
+ * draws them. In a right-to-left export, times keep their left-to-right order and titles next to them are isolated. Pass concrete events: expand recurring series with
  * `expandRecurringEvents` first. Validates like EventCalendar (`validateCalendarEvents` and the view options) and throws a
  * RangeError for a view it does not export. Runs without a DOM.
  */
@@ -363,7 +435,7 @@ export function renderEventCalendarSvg<E extends CalendarEvent>(events: readonly
   validateCalendarEvents(events, options.resources)
   if (typeof date !== 'number' || !Number.isFinite(date)) throw new RangeError('date must be finite')
   const { theme, rtl, font, background } = common(options)
-  const { timeZone = 'UTC', weekStartsOn = 1, dayStart = 0, dayEnd = 24, maxMonthLanes = 3, locale = 'en-US' } = options
+  const { timeZone = 'UTC', weekStartsOn = 1, dayStart = 0, dayEnd = 24, maxMonthLanes = 3, locale = 'en-US', agendaDays } = options
   zoneFormat(timeZone)
   if (!Number.isInteger(dayStart) || !Number.isInteger(dayEnd) || dayStart < 0 || dayEnd > 24 || dayStart >= dayEnd) {
     throw new RangeError('dayStart and dayEnd must be integers with 0 <= dayStart < dayEnd <= 24')
@@ -379,9 +451,9 @@ export function renderEventCalendarSvg<E extends CalendarEvent>(events: readonly
   const width = sizeOption(options.width, 'width', 896)
   if (options.heading !== undefined && options.heading !== false && typeof options.heading !== 'string') throw new TypeError('heading must be a string or false')
   const labels = { ...defaultLabels }
-  for (const key of Object.keys(defaultLabels) as (keyof EventCalendarSvgLabels)[]) labels[key] = textOption(options.labels?.[key], 'labels.' + key, defaultLabels[key])
+  for (const key of Object.keys(defaultLabels) as (keyof SvgLabels)[]) labels[key] = textOption(options.labels?.[key], 'labels.' + key, defaultLabels[key])
 
-  const zone = { timeZone, weekStartsOn }
+  const zone = { timeZone, weekStartsOn, agendaDays }
   const days = eventCalendarDays(view, date, zone)
   const heading = options.heading === false ? '' : options.heading ?? viewTitle(view, date, days, locale, timeZone)
   const top = heading ? 36 : 0

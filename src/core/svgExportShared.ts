@@ -227,6 +227,18 @@ export function textDirection(rtl: boolean) {
   return { direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined }
 }
 
+/**
+ * A run of a right-to-left label wrapped in Unicode isolates (LRI or RLI … PDI), the in-text form of the
+ * `unicode-bidi: isolate` that the components put on such runs: a time such as `21:00–22:00` or `9:00 PM` keeps its
+ * left-to-right order (`ltr`), and a title next to it does not reorder with it (`rtl`, the label's own direction).
+ * `textDirection` embeds a whole `<text>` element; this isolates a part of it. Left-to-right exports keep the text
+ * unchanged.
+ */
+export function isolateText(text: string, rtl: boolean, direction: 'ltr' | 'rtl') {
+  if (!rtl || text === '') return text
+  return (direction === 'ltr' ? '\u2066' : '\u2067') + text + '\u2069'
+}
+
 /** The attributes of a text halo: a round-joined stroke of `color` painted under the fill; none without a colour. */
 export function textHalo(color: string | undefined, width: number) {
   return {
@@ -311,12 +323,15 @@ export function boxText(
   }, escapeXml(text)))
 }
 
-/** A pill-shaped badge with centred text, `width` estimated from the text. Returns its markup and width. */
-export function badge(x: number, y: number, text: string, colors: { fill: string; stroke: string; ink: string }) {
+/**
+ * A pill-shaped badge with centred text, `width` estimated from the text. Returns its markup and width. With `rtl` the
+ * text runs right to left, as the badge text of a right-to-left component does (a count such as `2 / 4`).
+ */
+export function badge(x: number, y: number, text: string, colors: { fill: string; stroke: string; ink: string }, rtl = false) {
   const width = Math.max(22, estimateTextWidth(text, 11) + 14), height = 18
   return {
     width,
     markup: tag('rect', { x, y, width, height, rx: 9, fill: colors.fill, stroke: colors.stroke })
-      + tag('text', { x: x + width / 2, y: y + 13, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: colors.ink }, escapeXml(text)),
+      + tag('text', { x: x + width / 2, y: y + 13, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: colors.ink, ...textDirection(rtl) }, escapeXml(text)),
   }
 }

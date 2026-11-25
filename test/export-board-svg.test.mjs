@@ -66,6 +66,11 @@ test('renderTaskBoardSvg mirrors right-to-left boards and boards without lanes',
   assert.ok(titleX(rtl, 'To do') > titleX(rtl, 'Done'))
   assert.ok(titleX(ltr, 'To do') < titleX(ltr, 'Done'))
   assert.equal(ltr.match(/class="vw-board-lane-head"/g), null)
+  // Count badges run right to left like the component's count, so "2 / 1" reads in the same visual order as on screen.
+  assert.match(rtl, /<text [^>]*text-anchor="middle"[^>]*direction="rtl" unicode-bidi="embed">2 \/ 1</)
+  assert.match(ltr, /<text [^>]*text-anchor="middle"[^>]*fill="[^"]+">2 \/ 1</)
+  const collapsedLane = renderTaskBoardSvg(cards, columns, { lanes, collapsedLaneIds: ['api'], direction: 'rtl' })
+  assert.match(collapsedLane, /<g class="vw-board-lane-head">.*?direction="rtl" unicode-bidi="embed">2</)
 })
 
 test('renderTaskBoardSvg escapes text and is deterministic', () => {

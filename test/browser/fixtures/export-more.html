@@ -61,6 +61,7 @@
               h(EventCalendar, {
                 ref: calendar, events, date: at(11, '12:00'), view: view.value, 'onUpdate:view': next => { view.value = next },
                 height: 240, dir, now: at(11, '10:30'), labels: { region: 'Export calendar' },
+                views: ['day', 'week', 'month', 'agenda'], agendaDays: params.get('agendaDays') ? Number(params.get('agendaDays')) : undefined,
               }),
             ]),
             h('section', { 'aria-label': 'Grid export fixture' }, [

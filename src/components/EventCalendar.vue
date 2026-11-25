@@ -985,18 +985,21 @@ function scrollToTime(time: number) {
 
 /**
  * A standalone SVG document of the shown view with the default rendering and the current theme colours: the whole time
- * grid from `dayStart` to `dayEnd` whatever is scrolled into view, or the whole month. Slots and the toolbar buttons are
- * not drawn. Throws the validation error of invalid props, and a RangeError for a view the export does not support.
+ * grid from `dayStart` to `dayEnd` whatever is scrolled into view, the whole month, or every day of the agenda however
+ * far its list is scrolled. Slots and the toolbar buttons are not drawn. Throws the validation error of invalid props.
  */
 function exportSvg(options: EventCalendarExportOptions<E> = {}) {
   if (validationError.value) throw validationError.value
   const { includeSelection = true, theme, width, heading, ...rest } = options
   return renderEventCalendarSvg(props.events, localDate.value, {
     ...rest,
-    view: view.value, timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, locale: props.locale, resources: props.resources,
+    view: view.value, timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, agendaDays: props.agendaDays, locale: props.locale, resources: props.resources,
     dayStart: props.dayStart, dayEnd: props.dayEnd, hourHeight: props.hourHeight, maxMonthLanes: props.maxMonthLanes, now: props.now,
     formatTime: timeText.value, selectedId: includeSelection ? localSelected.value : undefined,
-    labels: { allDay: messages.value.allDay, more: messages.value.more, resources: messages.value.resources, now: messages.value.now, recurring: messages.value.recurring ?? '' },
+    labels: {
+      allDay: messages.value.allDay, more: messages.value.more, resources: messages.value.resources, now: messages.value.now,
+      recurring: messages.value.recurring ?? '', empty: messages.value.empty,
+    },
     width: width ?? (root.value?.clientWidth || undefined), heading: heading ?? (title.value || false),
     direction: isRtl() ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
