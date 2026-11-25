@@ -515,7 +515,8 @@ function routeEdge(
     const attach = (point: GraphPoint, next: GraphPoint | undefined, id: string, side: Side | undefined) => {
       const shape = graphOutlineShape(nodes.get(id))
       if (!shape || (!spreadOrLoop && !isGraphFlowchartShape(shape))) return point
-      if (!side || !next || (horizontal(side) ? next.y !== point.y : next.x !== point.x)) return point
+      // The leg must run along the side's normal; a rounding difference across it does not count.
+      if (!side || !next || Math.abs(horizontal(side) ? next.y - point.y : next.x - point.x) >= 1e-9) return point
       return graphOutlineAlong(layout.boxes.get(id)!, shape, point, side)
     }
     const last = points.length - 1
