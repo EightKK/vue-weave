@@ -129,8 +129,11 @@ test('renderEventCalendarSvg escapes text, is deterministic and validates its in
   assert.throws(() => renderEventCalendarSvg([{ id: 'c', start: at(11, 9), end: at(11, 10), label: 'C', color: 'url(#evil)' }], date), RangeError)
 })
 
-// Unicode isolates the export puts around a time (LRI) and a title (RLI) in right-to-left text; PDI closes both.
-const lri = '⁦', rli = '⁧', pdi = '⁩'
+/** The `<text>` elements of an export with their x, anchor, direction and content, in document order. */
+const textRuns = svg => [...svg.matchAll(/<text ([^>]*)>([^<]*)<\/text>/g)].map(([, attributes, text]) => ({
+  text, x: Number(/(?:^| )x="([^"]*)"/.exec(attributes)?.[1]),
+  anchor: /text-anchor="([^"]*)"/.exec(attributes)?.[1], direction: /(?:^| )direction="([^"]*)"/.exec(attributes)?.[1],
+}))
 
 test('renderEventCalendarSvg draws the agenda: day groups with all-day entries first and multi-day events on each day', () => {
   const resources = [{ id: 'room-a', label: 'Room A' }]
@@ -192,29 +195,47 @@ test('renderEventCalendarSvg draws the agenda in the time zone, locale and direc
   const texts = svgTexts(svg)
   // 09:00 UTC is 18:00 in Tokyo; the trip starts at 17:00 on the 14th there. Times keep their left-to-right order.
   assert.ok(texts.includes('2026年11月11日水曜日'))
-  assert.ok(texts.includes(`${lri}18:00–20:00${pdi}`))
-  assert.ok(texts.includes(`${lri}17:00–${pdi}`))
-  assert.ok(texts.includes(`${lri}All day${pdi}`))
+  const runs = textRuns(svg)
+  for (const time of ['18:00–20:00', '17:00–', 'All day']) {
+    assert.deepEqual(runs.find(run => run.text === time), { text: time, x: 700, anchor: 'end', direction: undefined }, time + ': left to right, ending at the inline start')
+  }
   // The date column is at the right edge and the entries to its left, with the accent stripe at their right edge.
   assert.match(svg, /<svg x="732" y="8" width="156" height="24" overflow="hidden"><text x="156"[^>]*direction="rtl"/)
   assert.match(svg, /<rect x="12" y="8" width="708" height="24" rx="4"[^>]*\/><rect x="717" y="8" width="3"/)
 })
 
-test('right-to-left exports isolate times and titles as the component does; left-to-right text is unchanged', () => {
+test('right-to-left exports keep times left to right at the inline start and the title after them; left-to-right text is unchanged', () => {
   const late = [{ id: 'late', start: at(11, 21), end: at(11, 22), label: 'Late deploy' }]
   const formatTime = time => `${new Date(time).getUTCHours() % 12}:00 ${new Date(time).getUTCHours() < 12 ? 'AM' : 'PM'}`
-  const month = svgTexts(renderEventCalendarSvg(late, date, { view: 'month', direction: 'rtl' }))
-  assert.ok(month.includes(`${lri}21:00${pdi} ${rli}Late deploy${pdi}`), 'month: the time first in reading order, each part isolated')
-  const twelve = svgTexts(renderEventCalendarSvg(late, date, { view: 'month', direction: 'rtl', formatTime }))
-  assert.ok(twelve.includes(`${lri}9:00 PM${pdi} ${rli}Late deploy${pdi}`), 'a 12-hour time is not split by the title')
-  const week = svgTexts(renderEventCalendarSvg(late, date, { direction: 'rtl' }))
-  assert.ok(week.includes(`${lri}21:00–22:00${pdi}`), 'a range keeps its left-to-right order')
-  assert.ok(week.includes('Late deploy'))
-  const short = svgTexts(renderEventCalendarSvg(late, date, { direction: 'rtl', hourHeight: 24 }))
-  assert.ok(short.includes(`${lri}21:00–22:00${pdi} ${rli}Late deploy${pdi}`))
-  // Left-to-right output keeps plain text.
+  // The time and the title are separate runs: the time is left-to-right text whose right end is at the inline start
+  // of the event box, the title right-to-left text starting one estimated time and space (0.6 em per character) further
+  // left. No Unicode isolates or bidi reordering are involved, so every renderer places them alike.
+  const pair = (svg, time) => {
+    const runs = textRuns(svg)
+    const index = runs.findIndex(run => run.text === time)
+    return [runs[index], runs[index + 1]]
+  }
+  const estimate = (text, size) => [...text].length * size * 0.6
+  const at3 = n => Math.round(n * 1000) / 1000
+  const monthSvg = renderEventCalendarSvg(late, date, { view: 'month', direction: 'rtl' })
+  assertWellFormed(monthSvg)
+  assert.doesNotMatch(monthSvg, /[⁦-⁩]/)
+  const [time, title] = pair(monthSvg, '21:00')
+  assert.deepEqual(time, { text: '21:00', x: time.x, anchor: 'end', direction: undefined }, 'month: the time is left to right, ending at the inline start')
+  assert.deepEqual(title, { text: 'Late deploy', x: at3(time.x - estimate('21:00 ', 11)), anchor: undefined, direction: 'rtl' })
+  const [twelve, twelveTitle] = pair(renderEventCalendarSvg(late, date, { view: 'month', direction: 'rtl', formatTime }), '9:00 PM')
+  assert.equal(twelve.anchor, 'end', 'a 12-hour time is one left-to-right run, not split by the title')
+  assert.equal(twelveTitle.x, at3(twelve.x - estimate('9:00 PM ', 11)))
+  const week = textRuns(renderEventCalendarSvg(late, date, { direction: 'rtl' }))
+  assert.equal(week.find(run => run.text === '21:00–22:00')?.anchor, 'end', 'a range keeps its left-to-right order')
+  assert.equal(week.find(run => run.text === 'Late deploy')?.direction, 'rtl')
+  const [short, shortTitle] = pair(renderEventCalendarSvg(late, date, { direction: 'rtl', hourHeight: 24 }), '21:00–22:00')
+  assert.equal(short.anchor, 'end')
+  assert.deepEqual(shortTitle, { text: 'Late deploy', x: at3(short.x - estimate('21:00–22:00 ', 11)), anchor: undefined, direction: 'rtl' })
+  // Left-to-right output keeps one run per line.
   assert.ok(svgTexts(renderEventCalendarSvg(late, date, { view: 'month' })).includes('21:00 Late deploy'))
   assert.ok(svgTexts(renderEventCalendarSvg(late, date)).includes('21:00–22:00'))
+  assert.ok(svgTexts(renderEventCalendarSvg(late, date, { hourHeight: 24 })).includes('21:00–22:00 Late deploy'))
   assert.doesNotMatch(renderEventCalendarSvg(late, date, { view: 'agenda' }), /[⁦-⁩]/)
   // The accessible names in <title> are not changed.
   assert.match(renderEventCalendarSvg(late, date, { view: 'month', direction: 'rtl' }), /<title>Late deploy, Wed, Nov 11 21:00–22:00<\/title>/)

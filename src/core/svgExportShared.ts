@@ -227,18 +227,6 @@ export function textDirection(rtl: boolean) {
   return { direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined }
 }
 
-/**
- * A run of a right-to-left label wrapped in Unicode isolates (LRI or RLI … PDI), the in-text form of the
- * `unicode-bidi: isolate` that the components put on such runs: a time such as `21:00–22:00` or `9:00 PM` keeps its
- * left-to-right order (`ltr`), and a title next to it does not reorder with it (`rtl`, the label's own direction).
- * `textDirection` embeds a whole `<text>` element; this isolates a part of it. Left-to-right exports keep the text
- * unchanged.
- */
-export function isolateText(text: string, rtl: boolean, direction: 'ltr' | 'rtl') {
-  if (!rtl || text === '') return text
-  return (direction === 'ltr' ? '\u2066' : '\u2067') + text + '\u2069'
-}
-
 /** The attributes of a text halo: a round-joined stroke of `color` painted under the fill; none without a colour. */
 export function textHalo(color: string | undefined, width: number) {
   return {
@@ -305,21 +293,26 @@ export function textOption(value: unknown, name: string, fallback: string) {
 
 /**
  * One line of text clipped to a box, anchored at the inline start (after `inset`), the centre or the inline end (before
- * `inset`). Returns '' for empty text or an empty box.
+ * `inset`). Returns '' for empty text or an empty box. An `ltr` run keeps left-to-right order in a right-to-left box, as
+ * an element with `direction: ltr; unicode-bidi: isolate` does on screen (a time such as `21:00–22:00`): it is written as
+ * left-to-right text anchored at the same side, so no bidi resolution of the renderer is involved. Left-to-right boxes
+ * ignore `ltr`.
  */
 export function boxText(
   box: Box, rtl: boolean, text: string,
-  style: { y: number; size: number; fill: string; weight?: number; inset?: number; align?: 'start' | 'center' | 'end'; italic?: boolean },
+  style: { y: number; size: number; fill: string; weight?: number; inset?: number; align?: 'start' | 'center' | 'end'; italic?: boolean; ltr?: boolean },
 ) {
   if (text === '' || box.width <= 0 || box.height <= 0) return ''
   const inset = style.inset ?? 0, align = style.align ?? 'start'
   const atRight = (align === 'end') !== rtl
   const x = align === 'center' ? box.width / 2 : atRight ? box.width - inset : inset
+  const ltrRun = rtl && style.ltr === true
   // With `direction="rtl"` the anchor names a side in reading order, so `end` text in a right-to-left box starts at x.
-  const anchor = align === 'center' ? 'middle' : align === 'end' ? 'end' : undefined
+  // A left-to-right run is anchored by its physical side instead: its right end at x when x is at the right.
+  const anchor = align === 'center' ? 'middle' : ltrRun ? (atRight ? 'end' : undefined) : align === 'end' ? 'end' : undefined
   return tag('svg', { x: box.x, y: box.y, width: box.width, height: box.height, overflow: 'hidden' }, tag('text', {
     x, y: style.y, 'text-anchor': anchor, 'font-size': style.size, 'font-weight': style.weight,
-    'font-style': style.italic ? 'italic' : undefined, fill: style.fill, ...textDirection(rtl),
+    'font-style': style.italic ? 'italic' : undefined, fill: style.fill, ...textDirection(rtl && !ltrRun),
   }, escapeXml(text)))
 }
 
