@@ -979,12 +979,14 @@ function eventBlur(focus: FocusEvent) {
 // After the parent applies a keyboard edit, the event may be drawn by another element: keep the focus on it.
 const pendingFocus = usePendingFocus(() => props.events, id => elementWithData(root.value, 'vwEvent', id)?.focus(), { flush: 'post' })
 
-/** Scroll the time grid so that the time of day of `time` is at the top. */
+/**
+ * Scroll the time grid so that the time of day of `time` is at the top. The time of day is read on the day of `time`
+ * itself, so a time on any shown day (or on no shown day) scrolls to the same hour.
+ */
 function scrollToTime(time: number) {
   const element = scroller.value
-  const day = columns.value[0]?.day
-  if (!element || !day) return
-  element.scrollTop = Math.max(0, pxOf(timeOfDay(day.start, time)))
+  if (!element || !columns.value.length) return
+  element.scrollTop = Math.max(0, pxOf(timeOfDay(time, time)))
 }
 
 /**

@@ -424,6 +424,14 @@ test('Escape during an edge auto-scroll cancels the drag and stops scrolling', a
   expect(errors).toEqual([])
 })
 
+test('scrollToTime scrolls to the time of day of the time it is given, whatever its day', async ({ page }) => {
+  const { errors, scroller, control } = await openScrollingCalendar(page)
+  // The view shows November 11; 03:00 on November 12 is three hours of 48 px below midnight, not 27.
+  await control('Scroll to 03:00 the next day').click()
+  await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBe(3 * 48)
+  expect(errors).toEqual([])
+})
+
 test('a blank rejection reason from validateEdit rejects with the default text', async ({ page }) => {
   const { errors, standup, control, log, announcement } = await openScrollingCalendar(page)
   await control('Reject edits with a blank reason').click()
