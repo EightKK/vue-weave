@@ -320,7 +320,8 @@ function routeEdges(edges: readonly GraphEdge[], slot: Map<string, number>, xs: 
   const routes = new Map<string, Route>()
   const bundles = new Map<string, GraphEdge[]>()
   for (const edge of edges) {
-    const key = edge.from < edge.to ? edge.from + '\u0000' + edge.to : edge.to + '\u0000' + edge.from
+    // JSON keeps the pair apart for any IDs; a separator character could occur inside an ID.
+    const key = JSON.stringify(edge.from < edge.to ? [edge.from, edge.to] : [edge.to, edge.from])
     const bundle = bundles.get(key)
     if (bundle) bundle.push(edge)
     else bundles.set(key, [edge])

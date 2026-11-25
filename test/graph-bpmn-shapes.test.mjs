@@ -83,6 +83,19 @@ test('orthogonal edges end on flowchart outlines while other shapes keep the sid
     routeGraphEdges(layout, edges, byId(plain), { style: 'orthogonal' }).paths.get('ab'))
 })
 
+test('orthogonal edges reach flowchart outlines when the box centres differ only by rounding', () => {
+  // Centres at y 40.000000000000046 and 40, as radial layouts produce, once left both ends on the box sides.
+  const nodes = [{ id: 'a', label: 'A', shape: 'circle' }, { id: 'b', label: 'B', shape: 'circle' }]
+  const edges = [{ id: 'ab', from: 'a', to: 'b' }]
+  for (const y of [20, 20.000000000000046]) {
+    const layout = {
+      boxes: new Map([['a', { x: 0, y, width: 100, height: 40, rank: 0 }], ['b', { x: 200, y: 20, width: 100, height: 40, rank: 1 }]]),
+      paths: new Map([['ab', 'M 100 40 L 200 40']]), edgeLabels: new Map(), width: 320, height: 80,
+    }
+    assert.equal(routeGraphEdges(layout, edges, byId(nodes), { style: 'orthogonal' }).paths.get('ab'), 'M 70 40 L 230 40', String(y))
+  }
+})
+
 const lanes = [{ id: 'customer', label: 'Customer' }, { id: 'sales', label: 'Sales' }, { id: 'warehouse', label: 'Warehouse' }]
 const poolNodes = [{ id: 'order', label: 'Order', lane: 'customer' }, { id: 'check', label: 'Check', lane: 'sales' }, { id: 'ship', label: 'Ship', lane: 'warehouse' }]
 const poolEdges = [{ id: 'oc', from: 'order', to: 'check' }, { id: 'cs', from: 'check', to: 'ship' }]

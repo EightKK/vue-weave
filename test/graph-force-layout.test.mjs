@@ -116,6 +116,21 @@ test('self-loops and parallel edges each receive a distinct path and label', () 
   }
 })
 
+test('edges between different node pairs are never bundled, whatever characters the IDs hold', () => {
+  // 'a\0b' → 'c' and 'a' → 'b\0c' once shared one bundle key, so the second edge was drawn between the first pair.
+  const layout = layoutForceGraph(['a\u0000b', 'c', 'a', 'b\u0000c'].map(node), [
+    edge('ca', 'c', 'a'), edge('first', 'a\u0000b', 'c'), edge('second', 'a', 'b\u0000c'),
+  ])
+  const inside = (box, [x, y]) => x >= box.x - 1e-6 && x <= box.x + box.width + 1e-6 && y >= box.y - 1e-6 && y <= box.y + box.height + 1e-6
+  for (const [id, from, to] of [['first', 'a\u0000b', 'c'], ['second', 'a', 'b\u0000c']]) {
+    const path = layout.paths.get(id)
+    assert.match(path, /^M \S+ \S+ L /, id + ' is a single straight edge')
+    const numbers = path.match(/-?[\d.]+(?:e-?\d+)?/g).map(Number)
+    assert.ok(inside(layout.boxes.get(from), numbers.slice(0, 2)), id + ' starts at its source')
+    assert.ok(inside(layout.boxes.get(to), numbers.slice(-2)), id + ' ends at its target')
+  }
+})
+
 test('pinned nodes keep their initial position and initial positions shape the start', () => {
   const nodes = ['a', 'b', 'c', 'd'].map(node)
   const edges = [edge('ab', 'a', 'b'), edge('bc', 'b', 'c'), edge('cd', 'c', 'd')]

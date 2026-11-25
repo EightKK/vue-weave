@@ -204,6 +204,9 @@ function searchRegion(
     const sorted = sortedUnique(borders)
     const result: number[] = []
     for (let i = 1; i < sorted.length; i++) result.push((sorted[i - 1]! + sorted[i]!) / 2)
+    // Without an obstacle edge across this axis the region is one free channel: its own edges are lines too, so a
+    // route that has to turn back (ends level with each other, facing away) still finds a way around.
+    if (sorted.length === 2) result.push(sorted[0]!, sorted[1]!)
     result.push(a, b)
     return sortedUnique(result)
   }

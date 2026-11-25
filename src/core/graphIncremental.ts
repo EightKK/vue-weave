@@ -309,6 +309,12 @@ export function layoutGraphIncrementally(
   }
 
   const { paths, edgeLabels, routes } = routeIncrementalEdges(edges, resultBoxes, direction, previousLayout)
+  // A self-loop bulges past the right side of its box (its control points lie 30 units out), like in the other layouts.
+  for (const edge of edges) {
+    if (edge.from !== edge.to) continue
+    const box = resultBoxes.get(edge.from)!
+    right = Math.max(right, box.x + box.width + 30)
+  }
   return {
     boxes: resultBoxes, paths, edgeLabels, width: Math.max(1, right + padding), height: Math.max(1, bottom + padding),
     ...routes && { routes },

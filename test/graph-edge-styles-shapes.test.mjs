@@ -145,6 +145,21 @@ test('parallel orthogonal edges are shifted copies of one route and stay on thei
   assert.deepEqual(withRoutes.routes.get('ab1').points, routes[0].slice(1, -1))
 })
 
+test('parallel orthogonal edges stay axis-aligned when the box centres differ only by rounding', () => {
+  // A centre at y 40.000000000000046 instead of 40 (as radial layouts produce) once made the spread routes diagonal and
+  // moved their ends off the box sides, with and without avoidNodes.
+  const rounded = {
+    boxes: new Map([['a', { x: 0, y: 20.000000000000046, width: 100, height: 40, rank: 0 }], ['b', { x: 200, y: 20, width: 100, height: 40, rank: 1 }]]),
+    paths: new Map([['p1', 'M 100 40 L 200 40'], ['p2', 'M 100 40 L 200 40']]), edgeLabels: new Map(), width: 320, height: 80,
+  }
+  const pair = [{ id: 'p1', from: 'a', to: 'b' }, { id: 'p2', from: 'a', to: 'b' }]
+  const pairNodes = byId([{ id: 'a' }, { id: 'b' }])
+  for (const avoidNodes of [undefined, true]) {
+    const spread = routeGraphEdges(rounded, pair, pairNodes, { style: 'orthogonal', parallelSpacing: 10, avoidNodes })
+    assert.deepEqual(pair.map(edge => spread.paths.get(edge.id)), ['M 100 35 L 200 35', 'M 100 45 L 200 45'], String(avoidNodes))
+  }
+})
+
 test('two edges of a cycle in one rank separate in every style and direction', () => {
   const pairNodes = [{ id: 'p', label: 'P' }, { id: 'q', label: 'Q' }]
   const pair = [{ id: 'pq', from: 'p', to: 'q' }, { id: 'qp', from: 'q', to: 'p' }]
