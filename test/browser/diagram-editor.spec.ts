@@ -268,6 +268,14 @@ test('inspector list rejections show inline, keep the draft until Escape, and st
   await units.press('Enter')
   await expect(resources.locator('..').getByRole('alert')).toHaveText('Units for Crane must be a positive integer')
   await expect(events).toHaveText('["list-change-rejected","assignments","At most 3 units in total."]')
+  // Only decimal text is a number, as in number fields: a hexadecimal or binary literal is refused too.
+  for (const text of ['0x2', '0b10']) {
+    await units.fill(text)
+    await units.press('Enter')
+    await expect(units).toHaveAttribute('aria-invalid', 'true')
+    await expect(resources.locator('..').getByRole('alert')).toHaveText('Units for Crane must be a positive integer')
+  }
+  await expect(events).toHaveText('["list-change-rejected","assignments","At most 3 units in total."]')
   // New source data under a draft drops it and its message.
   await page.evaluate(() => (window as any).changeRemotely())
   await expect(units).toHaveValue('2')

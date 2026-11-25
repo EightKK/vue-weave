@@ -294,6 +294,7 @@ function onCellInput(field: InspectorListField<T>, index: number, column: 'units
   drafts.set(key, { text: (event.target as HTMLInputElement).value, base: drafts.get(key)?.base ?? rowsOf(field), field: field.id })
   errors.delete(key)
 }
+const decimalText = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i
 function commitCell(field: InspectorListField<T>, index: number, column: 'units' | 'lag') {
   const key = cellKey(field, index, column)
   const draft = drafts.get(key)
@@ -301,7 +302,8 @@ function commitCell(field: InspectorListField<T>, index: number, column: 'units'
   const unit = field.kind === 'dependencies' ? field.lagUnitLabel : undefined
   let text = draft.text.trim()
   if (unit && text.endsWith(unit)) text = text.slice(0, -unit.length).trim()
-  let number = text === '' ? NaN : Number(text)
+  // Decimal numbers only, as in number fields: `Number` alone would also read `0x10`, `0b11` and `0o7`.
+  let number = decimalText.test(text) ? Number(text) : NaN
   // A lag typed in display units (`lagUnitSize`) becomes whole model units.
   if (column === 'lag' && field.kind === 'dependencies' && field.lagUnitSize !== undefined) number = Math.round(number * field.lagUnitSize)
   return changeRow(field, index, column, number, draft.text)
