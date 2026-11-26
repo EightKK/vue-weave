@@ -19,7 +19,7 @@
       // A TaskBoard of 5 cards in 4 columns, with two lanes unless `nolanes`. Every event is logged as a JSON line to the
       // "Board log" status. The parent applies moves, collapsed IDs and the selection. Query parameters: nolanes, rtl,
       // readonly, strict (validateCardMove refuses a column already at its WIP limit), slots (card, column-header, with its own
-      // collapse toggle under collapsible, and empty slots), german (labels), collapsible, ignoremoves (moves are logged but not applied), refocus (with ignoremoves: the move handler replaces the cards and focuses the "Replace cards" button at once). Controls call the exposed focusCard and cancelMove, replace the cards
+      // collapse toggle under collapsible, and empty slots), german (labels), collapsible, ignoremoves (moves are logged but not applied), refocus (the move handler focuses the "Replace cards" button at once; with ignoremoves it replaces the cards with equal new objects instead of applying the move). Controls call the exposed focusCard and cancelMove, replace the cards
       // with equal new objects and reload the page state.
       const query = new URLSearchParams(location.search)
       const lanes = query.has('nolanes') ? undefined : [{ id: 'web', label: 'Web', detail: 'Front end' }, { id: 'api', label: 'API' }]
@@ -70,10 +70,8 @@
               onBackgroundClick: click => record('background', click),
               onCardMove: change => {
                 if (!query.has('ignoremoves')) cards.value = applyBoardCardMove(cards.value, change, { columns, lanes })
-                else if (query.has('refocus')) {
-                  cards.value = cards.value.map(card => ({ ...card }))
-                  ;[...document.querySelectorAll('button')].find(button => button.textContent === 'Replace cards')?.focus()
-                }
+                else if (query.has('refocus')) cards.value = cards.value.map(card => ({ ...card }))
+                if (query.has('refocus')) [...document.querySelectorAll('button')].find(button => button.textContent === 'Replace cards')?.focus()
                 record('move', change.id, change.after.columnId, change.after.laneId ?? null, change.after.index, change.source)
               },
               onCardMoveRejected: (change, reason) => record('rejected', change.id, reason),

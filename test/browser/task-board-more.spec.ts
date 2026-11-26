@@ -151,19 +151,21 @@ test('a move the parent has not applied when the focus leaves the card does not 
   expect(errors).toEqual([])
 })
 
-test('a parent that changes the cards and moves the focus in its move handler keeps the focus where it put it', async ({ page }) => {
-  const { errors, card, button, lines } = await openBoard(page, '?ignoremoves&refocus')
-  await card('Alpha').focus()
-  await page.keyboard.press('Space')
-  await page.keyboard.press('ArrowRight')
-  await page.keyboard.press('Space')
-  expect(await lines()).toEqual([['move', 'alpha', 'doing', 'web', 0, 'keyboard']])
-  await expect(button('Replace cards')).toBeFocused()
-  // Let the deferred focus of the board run, had it not been cancelled.
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
-  await expect(button('Replace cards')).toBeFocused()
-  expect(errors).toEqual([])
-})
+for (const [name, search] of [['ignores the move and changes the cards', '?ignoremoves&refocus'], ['applies the move', '?refocus']]) {
+  test(`a parent that ${name} and moves the focus in its move handler keeps the focus where it put it`, async ({ page }) => {
+    const { errors, card, button, lines } = await openBoard(page, search)
+    await card('Alpha').focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Space')
+    expect(await lines()).toEqual([['move', 'alpha', 'doing', 'web', 0, 'keyboard']])
+    await expect(button('Replace cards')).toBeFocused()
+    // Let the deferred focus of the board run, had it not been cancelled.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
+    await expect(button('Replace cards')).toBeFocused()
+    expect(errors).toEqual([])
+  })
+}
 
 test('pointer cancellation and new source data end a drag without a proposal', async ({ page, browserName }) => {
   const { errors, board, card, press, lines } = await openBoard(page)

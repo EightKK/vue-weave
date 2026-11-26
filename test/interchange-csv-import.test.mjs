@@ -78,6 +78,9 @@ test('a progress below 1e-6 stays a number cell, is written in plain decimal not
   // The table reads back directly as well, without CSV text in between.
   assert.deepEqual(timelineFromCsvTable(table, { parseTime }).bars.map(bar => bar.progress), progresses)
   assert.equal(toCsv([[-2.5e-8, 1e21]]), '-0.000000025,1e+21\r\n')
+  // Only the progress column reads number cells as decimal text: rows labelled 5e-7 and '0.0000005' stay apart.
+  const labels = timelineFromCsvTable([['Row', 'Bar', 'Start', 'End'], [5e-7, 'A', 0, 1], ['0.0000005', 'B', 0, 1]], { parseTime: Number })
+  assert.deepEqual(labels.rows.map(row => row.label), ['5e-7', '0.0000005'])
 })
 
 test('timelineFromCsvTable supports custom headers, column lists, labels without WBS and missing parents', () => {

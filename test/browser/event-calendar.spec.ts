@@ -326,6 +326,19 @@ async function openCalendarFixture(page: Page) {
   }
 }
 
+test('an edit handler that applies a keyboard edit and moves the focus elsewhere keeps the focus where it put it', async ({ page }) => {
+  const { errors, review, control, log } = await openCalendarFixture(page)
+  await control('Focus Replace events after an edit').click()
+  await review.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(log).toHaveText('edit review')
+  await expect(control('Replace events')).toBeFocused()
+  // Let the deferred focus of the calendar run, had it been requested.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
+  await expect(control('Replace events')).toBeFocused()
+  expect(errors).toEqual([])
+})
+
 test('cancelEdit(), new events and pointer cancellation end a drag with their reasons and no proposal', async ({ page }) => {
   const { errors, review, control, log } = await openCalendarFixture(page)
   const box = (await review.boundingBox())!

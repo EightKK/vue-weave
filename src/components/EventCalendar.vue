@@ -11,7 +11,7 @@ import { intlTimeFormatter } from '../core/calendarFormat.js'
 import { cachedDateFormat, zoneFormat } from '../core/timeZone.js'
 import type { TimeRange } from '../core/timeline.js'
 import type { ChartDirection } from '../core/types.js'
-import { elementWithData, usePendingFocus } from './shared/focus.js'
+import { elementWithData, focusMovedAway, usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
 import { renderEventCalendarSvgWithColors, type EventCalendarExportOptions, type EventCalendarPngExportOptions } from '../core/exportCalendarSvg.js'
@@ -964,13 +964,20 @@ function eventKeys(key: KeyboardEvent, event: E, area: Area) {
   }
   if (!change) return
   key.preventDefault()
-  if (propose(change)) pendingFocus.request(event.id)
+  const button = key.currentTarget as Element | null
+  // Keep the focus on the event unless the parent moved it elsewhere while it handled the proposal.
+  if (propose(change) && !focusMovedAway(button)) pendingFocus.request(event.id)
 }
 /**
  * Focus that leaves an event for another place drops a pending focus request. A redraw that moves or removes the focused
  * element blurs it too, while the update that restores the focus runs; the check waits until that update is done.
  */
 function eventBlur(focus: FocusEvent) {
+  // Focus moved to another element drops the request at once; a redraw blurs without a `relatedTarget`.
+  if (focus.relatedTarget instanceof Element) {
+    pendingFocus.cancel(undefined, true)
+    return
+  }
   const element = focus.target as Element
   queueMicrotask(() => {
     if (element.isConnected && document.activeElement !== element) pendingFocus.cancel()

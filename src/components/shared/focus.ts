@@ -14,6 +14,18 @@ export function elementWithData(root: ParentNode | null | undefined, key: string
 }
 
 /**
+ * Whether the focus moved from `element` to another element: the active element of the element's own root (its
+ * document or shadow root) is neither `element` nor nothing (the body). A removed element has not lost its focus to
+ * another element by itself, so this is false for it.
+ */
+export function focusMovedAway(element: Element | null | undefined) {
+  if (!element?.isConnected) return false
+  const root = element.getRootNode() as Document | ShadowRoot
+  const active = root.activeElement
+  return active !== null && active !== element && active !== element.ownerDocument.body
+}
+
+/**
  * Keep the keyboard focus on an item after the parent applies a keyboard edit: the edited item may then be drawn by
  * another element. `request(id)` after emitting an accepted proposal; the next change of `source` (the controlled data)
  * takes the request and calls `focus(id)` once the DOM is updated. `cancel()` drops the request, for example when the
@@ -41,12 +53,15 @@ export function usePendingFocus(source: WatchSource, focus: (id: string) => void
     request(id: string) {
       pending = id
     },
-    cancel(id?: string) {
+    /**
+     * `focusMoved`: the focus is known to have moved to another element (a blur with a `relatedTarget`). Without it, a
+     * request already taken is dropped only when the focus is on another element now: a redraw that replaces or reuses
+     * the focused element leaves the focus on the body, and the taken request is what puts it back.
+     */
+    cancel(id?: string, focusMoved = false) {
       if (id === undefined || pending === id) pending = undefined
-      // A request already taken is dropped only when the focus is on another element now: a redraw that replaces or
-      // reuses the focused element leaves the focus on the body, and the taken request is what puts it back.
       const active = typeof document === 'undefined' ? null : document.activeElement
-      if ((id === undefined || taken?.id === id) && active && active !== document.body) taken = undefined
+      if ((id === undefined || taken?.id === id) && (focusMoved || (active && active !== document.body))) taken = undefined
     },
     get pending() {
       return pending

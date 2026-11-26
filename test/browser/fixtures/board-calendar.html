@@ -40,6 +40,8 @@
           const calendar = ref()
           const events = shallowRef([{ id: 'review', label: 'Review', start: at('10:00'), end: at('11:00') }])
           const calendarLog = ref('none')
+          // When set, the edit handler applies the edit and focuses the "Replace events" button at once.
+          const refocusCalendar = ref(false)
 
           // A day view taller than its scroller, for edge auto-scroll and blank rejection reasons.
           const longEvents = shallowRef([{ id: 'standup', label: 'Standup', start: at('02:00'), end: at('03:00') }])
@@ -78,6 +80,7 @@
             h('section', { 'aria-label': 'Calendar fixture' }, [
               control('Cancel edit', () => calendar.value.cancelEdit()),
               control('Replace events', () => { events.value = events.value.map(event => ({ ...event })) }),
+              control('Focus Replace events after an edit', () => { refocusCalendar.value = true }),
               h('output', { role: 'status', 'aria-label': 'Calendar log' }, calendarLog.value),
               h(EventCalendar, {
                 ref: calendar, events: events.value, date: at('10:00'), view: 'day', dayStart: 8, dayEnd: 14, height: 320,
@@ -86,6 +89,7 @@
                 onEdit: change => {
                   events.value = events.value.map(event => event.id === change.id ? { ...event, ...change.after } : event)
                   calendarLog.value = 'edit ' + change.id
+                  if (refocusCalendar.value) [...document.querySelectorAll('button')].find(button => button.textContent === 'Replace events')?.focus()
                 },
                 onEditCancel: event => { calendarLog.value = `cancel ${event.eventIds.join(',')} ${event.reason}` },
               }),

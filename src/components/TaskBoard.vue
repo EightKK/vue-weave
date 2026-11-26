@@ -374,8 +374,14 @@ function cardBlur(event: FocusEvent, card: C) {
   const active = activeMove.value
   if (active?.source === 'keyboard' && active.id === card.id) cancelMove('blur')
   // Focus that leaves the card for another place drops a pending focus request, so a move the parent applies later (or
-  // never) does not pull the focus back from wherever it went. A redraw that removes the focused card blurs it too; the
-  // check waits until that update is done, and a removed card keeps the request.
+  // never) does not pull the focus back from wherever it went. Focus moved to another element (a `relatedTarget`, as
+  // when the parent focuses a control while it applies the move) drops it at once. A redraw that removes the focused
+  // card blurs it too, without a `relatedTarget`; the check waits until that update is done, and a removed card keeps
+  // the request.
+  if (event.relatedTarget instanceof Element) {
+    pendingFocus.cancel(card.id, true)
+    return
+  }
   const element = event.target as Element
   queueMicrotask(() => {
     if (element.isConnected && document.activeElement !== element) pendingFocus.cancel(card.id)

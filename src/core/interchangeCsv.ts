@@ -276,7 +276,8 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
   const text = (record: readonly CsvCell[], column: TimelineCsvColumn) => {
     const index = position.get(column)
     const cell = index === undefined ? undefined : record[index]
-    return cell === undefined ? '' : typeof cell === 'number' && Number.isFinite(cell) ? numberText(cell) : String(cell)
+    // A progress number cell reads as the decimal text `toCsv` writes for it, so `5e-7` is accepted; other cells as text.
+    return cell === undefined ? '' : column === 'progress' && typeof cell === 'number' && Number.isFinite(cell) ? numberText(cell) : String(cell)
   }
   // Rows by WBS code (or by label without codes), in order of appearance.
   const found = new Map<string, { id: string; label?: string; code?: string }>()
