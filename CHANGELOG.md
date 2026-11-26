@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.7.1 - 2026-11-26
+
+A patch release of bug fixes found by an exploratory review of the core, the components and the test suite. No API changes.
+
 ### Fixed
 
 - `parseFieldValue` reads a `duration` in larger units (`unitSize`) back as the exact value `formatFieldValue` wrote; 31 minutes shown in hours no longer reads as 1860000.0000000002 ms.
