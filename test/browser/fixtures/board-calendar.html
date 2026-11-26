@@ -18,8 +18,16 @@
       const control = (label, action) => h('button', { type: 'button', onClick: action }, label)
       const columns = [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'Doing' }, { id: 'done', label: 'Done' }]
       const at = time => Date.parse(`2026-11-11T${time}:00Z`)
+      // `?shadow` mounts the fixture in an open shadow root and adds an "Outside" button in the document before it; the
+      // calendar edit handler set up by "Focus Replace events after an edit" then focuses that button instead.
+      const shadow = new URLSearchParams(location.search).has('shadow')
+      const outside = document.createElement('button')
+      outside.type = 'button'
+      outside.textContent = 'Outside'
+      if (shadow) document.body.prepend(outside)
+      const refocusTarget = () => shadow ? outside : [...document.querySelectorAll('button')].find(button => button.textContent === 'Replace events')
 
-      createApp({
+      const app = createApp({
         setup() {
           // TaskBoard: the filter and the collapsed IDs are written inline, so every render passes a new function and a
           // new array with the same content.
@@ -89,7 +97,7 @@
                 onEdit: change => {
                   events.value = events.value.map(event => event.id === change.id ? { ...event, ...change.after } : event)
                   calendarLog.value = 'edit ' + change.id
-                  if (refocusCalendar.value) [...document.querySelectorAll('button')].find(button => button.textContent === 'Replace events')?.focus()
+                  if (refocusCalendar.value) refocusTarget()?.focus()
                 },
                 onEditCancel: event => { calendarLog.value = `cancel ${event.eventIds.join(',')} ${event.reason}` },
               }),
@@ -112,7 +120,18 @@
             ]),
           ])
         },
-      }).mount('#app')
+      })
+      if (shadow) {
+        const root = document.querySelector('#app').attachShadow({ mode: 'open' })
+        const style = document.createElement('link')
+        style.rel = 'stylesheet'
+        style.href = '/board-calendar-test/style.css'
+        const mount = document.createElement('div')
+        root.append(style, mount)
+        app.mount(mount)
+      } else {
+        app.mount('#app')
+      }
     </script>
   </body>
 </html>

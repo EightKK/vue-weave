@@ -15,14 +15,18 @@ export function elementWithData(root: ParentNode | null | undefined, key: string
 
 /**
  * Whether the focus moved from `element` to another element: the active element of the element's own root (its
- * document or shadow root) is neither `element` nor nothing (the body). A removed element has not lost its focus to
- * another element by itself, so this is false for it.
+ * document or shadow root) is neither `element` nor nothing (the body), or, for an element in a shadow root, the focus is
+ * outside that root on an element other than the body. A removed element has not lost its focus to another element by
+ * itself, so this is false for it.
  */
 export function focusMovedAway(element: Element | null | undefined) {
   if (!element?.isConnected) return false
   const root = element.getRootNode() as Document | ShadowRoot
   const active = root.activeElement
-  return active !== null && active !== element && active !== element.ownerDocument.body
+  if (active !== null) return active !== element && active !== element.ownerDocument.body
+  // A shadow root has no active element when the focus is outside it: it moved away unless it is on nothing.
+  const outer = element.ownerDocument.activeElement
+  return root !== element.ownerDocument && outer !== null && outer !== element.ownerDocument.body
 }
 
 /**

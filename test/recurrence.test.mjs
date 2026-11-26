@@ -324,6 +324,24 @@ test('a moved override keeps its old ID when its new occurrence ID is taken, and
   // Without the other event the override takes its new ID, and the expansion has unique IDs.
   unique(applyRecurringEdit([twice, override], { seriesId: 's', recurrenceId: start }, weekLater, 'series'))
 
+  // The same with times that are not whole milliseconds, which the IDs then carry.
+  const half = { ...twice, start: start + 0.5, end: start + hour + 0.5 }
+  const halfOverride = { ...override, id: 's:' + (start + week + 0.5), recurrenceId: start + week + 0.5 }
+  assert.throws(() => applyRecurringEdit([half, halfOverride, { ...taken, id: 's:' + (start + 2 * week + 0.5) }], { seriesId: 's', recurrenceId: start + 0.5 },
+    { start: start + week + 0.5, end: start + week + hour + 0.5 }, 'series'), /Duplicate event ID: s:/)
+
+  // Two RDATE overrides on following days move a day later: the later one's new ID is taken, so it keeps its old ID,
+  // which is the earlier one's new ID, so that one keeps its old ID too, and the result is valid.
+  const single = { id: 'r', label: 'R', start, end: start + hour, recurrence: { rdates: [start + 5 * day, start + 6 * day] } }
+  const fifth = { id: 'r:' + (start + 5 * day), label: 'R', start: start + 5 * day + hour, end: start + 5 * day + 2 * hour, seriesId: 'r', recurrenceId: start + 5 * day }
+  const sixth = { ...fifth, id: 'r:' + (start + 6 * day), start: start + 6 * day + hour, end: start + 6 * day + 2 * hour, recurrenceId: start + 6 * day }
+  const blocker = { id: 'r:' + (start + 7 * day), label: 'Blocker', start: 0, end: hour }
+  const chained = applyRecurringEdit([single, fifth, sixth, blocker], { seriesId: 'r', recurrenceId: start }, { start: start + day, end: start + day + hour }, 'series')
+  assert.deepEqual(chained.map(event => [event.id, event.recurrenceId]), [
+    ['r', undefined], [fifth.id, start + 6 * day], [sixth.id, start + 7 * day], [blocker.id, undefined],
+  ])
+  unique(chained)
+
   // Two overrides on both sides of the end of daylight saving time move to the same occurrence of the next day: both
   // new IDs are the same, and the old ID of the first is the ID of the moved first occurrence, so the edit throws.
   const fold = Date.parse('2026-11-01T01:30:00-04:00')
@@ -331,10 +349,12 @@ test('a moved override keeps its old ID when its new occurrence ID is taken, and
   const first = { id: 'd:' + fold, label: 'D', start: fold, end: fold + hour, seriesId: 'd', recurrenceId: fold }
   const second = { id: 'd:' + (fold + hour), label: 'D', start: fold + hour, end: fold + 2 * hour, seriesId: 'd', recurrenceId: fold + hour }
   assert.throws(() => applyRecurringEdit([daily, first, second], { seriesId: 'd', recurrenceId: fold - day }, { start: fold, end: fold + hour }, 'series'), /Duplicate event ID: d:/)
-  // Moved a week, the old IDs are free: both overrides keep them.
+  // Moved a week, the first override gives up the shared new ID and keeps its free old ID; the second then has the new
+  // ID to itself.
   const shifted = applyRecurringEdit([daily, first, second], { seriesId: 'd', recurrenceId: fold - day }, { start: fold - day + week, end: fold - day + week + hour }, 'series')
-  assert.deepEqual(shifted.map(event => event.id), ['d', 'd:' + fold, 'd:' + (fold + hour)])
   assert.equal(shifted[1].recurrenceId, shifted[2].recurrenceId)
+  assert.deepEqual(shifted.map(event => event.id), ['d', 'd:' + fold, 'd:' + shifted[2].recurrenceId])
+  unique(shifted)
 })
 
 test('applyRecurringEdit validates its input and never mutates it', () => {

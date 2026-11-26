@@ -755,48 +755,67 @@ function movedOverride<E extends CalendarEvent>(event: E, oldSeriesId: string, s
 }
 
 /**
- * Whether `id` is the ID of an occurrence that a series of `events` generates on expansion (`<series id>:<start>`,
- * not replaced by an override): such an ID is taken although no event of the list has it.
+ * A test of whether an ID is the ID of an occurrence that a series of `events` generates on expansion
+ * (`<series id>:<start>`, not replaced by an override): such an ID is taken although no event of the list has it. The
+ * start is the text after the last colon, as `String` writes it (fractional and negative times included), so the
+ * split is unambiguous. Series and overrides are indexed once, and each series is prepared at most once.
  */
-function generatesId(events: readonly CalendarEvent[], id: string, fallbackZone: string | undefined) {
+function generatedIds(events: readonly CalendarEvent[], fallbackZone: string | undefined) {
+  const series = new Map<string, CalendarEvent>()
+  const overridden = new Set<string>()
   for (const event of events) {
-    if (event.recurrence === undefined || !id.startsWith(event.id + ':')) continue
-    const rest = id.slice(event.id.length + 1)
-    const time = Number(rest)
-    if (!/^-?\d+$/.test(rest) || !Number.isSafeInteger(time)) continue
-    if (events.some(other => isOverrideOf(other, event.id, time))) continue
-    const occurrences = expandPrepared(prepare(seriesOf(event), fallbackZone), { start: time, end: time + 1 }, Number.MAX_SAFE_INTEGER)
-    if (occurrences.some(occurrence => occurrence.recurrenceId === time)) return true
+    if (event.recurrence !== undefined) series.set(event.id, event)
+    else if (event.seriesId !== undefined && event.recurrenceId !== undefined) overridden.add(overrideKey(event.seriesId, event.recurrenceId))
   }
-  return false
+  const prepared = new Map<string, PreparedSeries>()
+  const known = new Map<string, boolean>()
+  return (id: string) => {
+    let generated = known.get(id)
+    if (generated !== undefined) return generated
+    generated = false
+    const colon = id.lastIndexOf(':')
+    const event = colon < 0 ? undefined : series.get(id.slice(0, colon))
+    const time = Number(id.slice(colon + 1))
+    if (event && Number.isFinite(time) && String(time) === id.slice(colon + 1) && !overridden.has(overrideKey(event.id, time))) {
+      let ready = prepared.get(event.id)
+      if (!ready) prepared.set(event.id, ready = prepare(seriesOf(event), fallbackZone))
+      generated = expandPrepared(ready, { start: time, end: time + 1 }, Number.MAX_SAFE_INTEGER).some(occurrence => occurrence.recurrenceId === time)
+    }
+    known.set(id, generated)
+    return generated
+  }
 }
 
 /**
- * Settle the IDs of the overrides of `renamed` (moved overrides with a new ID): a new ID that another event of
- * `events` has, or that a series generates on expansion, is given up for the old ID; an old ID taken the same way
- * cannot be kept either, and the edit throws instead of returning events whose IDs collide. Giving up one ID can free or
- * take another, so this repeats until nothing changes.
+ * Settle the IDs of the overrides of `renamed` (moved overrides with a new ID, mapped to their old ID). A new ID that
+ * another event has, or that a series generates on expansion, is given up for the old ID; giving one up can take an ID
+ * another override uses, so this repeats until nothing changes. Only new IDs are given up, so it ends after at most one
+ * pass per override. When an override's old ID is still not free at the end, the edit throws instead of returning events
+ * whose IDs, or their expansion's, collide.
  */
 function settleMovedIds<E extends CalendarEvent>(events: E[], renamed: Map<E, string>, fallbackZone: string | undefined): E[] {
   if (renamed.size === 0) return events
   const result = events.slice()
-  const restored = new Set<E>()
+  const generated = generatedIds(result, fallbackZone)
+  const counts = new Map<string, number>()
+  const count = (id: string, by: number) => counts.set(id, (counts.get(id) ?? 0) + by)
+  for (const event of result) count(event.id, 1)
+  const taken = (id: string) => counts.get(id)! > 1 || generated(id)
+  const moved = new Set<number>()
+  for (let at = 0; at < result.length; at++) if (renamed.has(result[at]!)) moved.add(at)
   for (let changed = true; changed;) {
     changed = false
-    const counts = new Map<string, number>()
-    for (const event of result) counts.set(event.id, (counts.get(event.id) ?? 0) + 1)
-    for (let at = 0; at < result.length; at++) {
+    for (const at of moved) {
       const event = result[at]!
-      const isRenamed = renamed.has(event)
-      if (!isRenamed && !restored.has(event)) continue
-      if (counts.get(event.id) === 1 && !generatesId(result, event.id, fallbackZone)) continue
-      if (!isRenamed) throw new Error('Duplicate event ID: ' + event.id)
-      const back = { ...event, id: renamed.get(event)! }
-      restored.add(back)
-      result[at] = back
+      const old = renamed.get(event)
+      if (old === undefined || !taken(event.id)) continue
+      count(event.id, -1)
+      count(old, 1)
+      result[at] = { ...event, id: old }
       changed = true
     }
   }
+  for (const at of moved) if (taken(result[at]!.id)) throw new Error('Duplicate event ID: ' + result[at]!.id)
   return result
 }
 

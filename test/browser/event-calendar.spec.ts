@@ -311,10 +311,10 @@ test('a rejected keyboard edit does not take the focus back after a later change
 })
 
 /** The regression fixture: a day view of one event with buttons that cancel through the API and replace the events. */
-async function openCalendarFixture(page: Page) {
+async function openCalendarFixture(page: Page, search = '') {
   const errors = pageErrors(page)
   await serveFixture(page, 'board-calendar-test', 'board-calendar.html')
-  await page.goto('/board-calendar-test/')
+  await page.goto('/board-calendar-test/' + search)
   const section = page.getByRole('region', { name: 'Calendar fixture', exact: true })
   const calendar = section.getByRole('region', { name: 'Fixture calendar', exact: true })
   await expect(calendar).toBeVisible()
@@ -336,6 +336,19 @@ test('an edit handler that applies a keyboard edit and moves the focus elsewhere
   // Let the deferred focus of the calendar run, had it been requested.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
   await expect(control('Replace events')).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('in a shadow root, an edit handler that moves the focus outside the root keeps it there', async ({ page }) => {
+  const { errors, review, control, log } = await openCalendarFixture(page, '?shadow')
+  await control('Focus Replace events after an edit').click()
+  await review.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(log).toHaveText('edit review')
+  const outside = page.getByRole('button', { name: 'Outside', exact: true })
+  await expect(outside).toBeFocused()
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
+  await expect(outside).toBeFocused()
   expect(errors).toEqual([])
 })
 
