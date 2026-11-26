@@ -776,11 +776,9 @@ export function treeGridRangeText(index: TreeGridIndex<any>, flat: TreeGridLines
     for (let c = left; c <= Math.min(right, index.columns.length); c++) record.push(cellText(index, flat.lines[l]!, index.columns[c - 1]!))
     records.push(record)
   }
-  const text = formatSheetText(records)
-  // A paste drops one line break at the end, so a range whose last line is one empty cell ends with an extra one;
-  // otherwise "5" over an empty cell would read as the single value 5 and fill the whole range.
-  const last = records[records.length - 1]
-  return records.length > 1 && last!.length === 1 && last![0] === '' ? text + '\r\n' : text
+  // A range whose last line is one empty cell ends with a line break (see `formatSheetText`); otherwise "5" over an
+  // empty cell would read as the single value 5 and fill the whole range.
+  return formatSheetText(records)
 }
 
 /** Result of the spreadsheet builders: the edits of one batch, or why there is none. */
@@ -1044,14 +1042,20 @@ export function deleteTreeGridRows<R extends TreeGridRow>(
     if (!list) result.set(parentId, list = [])
     return list
   }
-  // Expand deleted rows in place: walk each list and splice the children of a deleted row into it.
+  // Expand deleted rows in place: walk each list, and walk the children of a deleted row where it stood. A stack of
+  // positions, not a splice with spread arguments, so a row with very many children cannot exceed the argument limit.
   while (stack.length) {
     const { parentId, list } = stack.pop()!
-    const queue = list.slice()
-    for (let i = 0; i < queue.length; i++) {
-      const row = queue[i]!
+    const frames: { list: readonly R[]; at: number }[] = [{ list, at: 0 }]
+    while (frames.length) {
+      const frame = frames[frames.length - 1]!
+      if (frame.at >= frame.list.length) {
+        frames.pop()
+        continue
+      }
+      const row = frame.list[frame.at++]!
       if (doomed.has(row.id)) {
-        if (!change.includeDescendants) queue.splice(i + 1, 0, ...(children.get(row.id) ?? []))
+        if (!change.includeDescendants) frames.push({ list: children.get(row.id) ?? [], at: 0 })
         continue
       }
       let kept = row

@@ -21,9 +21,21 @@ export interface CsvOptions {
 const formulaStart = /^[=+\-@\t\r]/
 
 /**
+ * The text of a finite number cell: `String(value)`, except that a number JavaScript writes with a negative exponent
+ * (below 1e-6, such as `5e-7`) is written in plain decimal notation (`0.0000005`), which reads back to the same number
+ * and which `timelineFromCsvTable` accepts.
+ */
+function numberText(value: number) {
+  const text = String(value)
+  const match = /^(-?)(\d)(?:\.(\d+))?e-(\d+)$/.exec(text)
+  return match ? match[1] + '0.' + '0'.repeat(Number(match[4]) - 1) + match[2] + (match[3] ?? '') : text
+}
+
+/**
  * Build RFC 4180 CSV text: fields separated by commas, records ended by CRLF, and fields that contain a comma, a
- * double quote, CR or LF enclosed in double quotes with inner quotes doubled. `undefined` is an empty field. Throws a
- * RangeError for a non-finite number. Spreadsheet formulas are kept unless `options.escapeFormulas` is true; set it
+ * double quote, CR or LF enclosed in double quotes with inner quotes doubled. `undefined` is an empty field. Numbers are
+ * written as `String` writes them, except that one below 1e-6 is written in plain decimal notation (`0.0000005`, not
+ * `5e-7`). Throws a RangeError for a non-finite number. Spreadsheet formulas are kept unless `options.escapeFormulas` is true; set it
  * when the file may be opened in a spreadsheet and the text is untrusted.
  */
 export function toCsv(table: readonly (readonly CsvCell[])[], options: CsvOptions = {}): string {
@@ -32,7 +44,7 @@ export function toCsv(table: readonly (readonly CsvCell[])[], options: CsvOption
     if (cell === undefined) return ''
     if (typeof cell === 'number') {
       if (!Number.isFinite(cell)) throw new RangeError('CSV numbers must be finite')
-      return String(cell)
+      return numberText(cell)
     }
     let text = String(cell)
     if (escapeFormulas && formulaStart.test(text)) text = '\'' + text
@@ -264,7 +276,8 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
   const text = (record: readonly CsvCell[], column: TimelineCsvColumn) => {
     const index = position.get(column)
     const cell = index === undefined ? undefined : record[index]
-    return cell === undefined ? '' : String(cell)
+    // A progress number cell reads as the decimal text `toCsv` writes for it, so `5e-7` is accepted; other cells as text.
+    return cell === undefined ? '' : column === 'progress' && typeof cell === 'number' && Number.isFinite(cell) ? numberText(cell) : String(cell)
   }
   // Rows by WBS code (or by label without codes), in order of appearance.
   const found = new Map<string, { id: string; label?: string; code?: string }>()

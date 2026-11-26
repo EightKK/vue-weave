@@ -18,8 +18,16 @@
       const control = (label, action) => h('button', { type: 'button', onClick: action }, label)
       const columns = [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'Doing' }, { id: 'done', label: 'Done' }]
       const at = time => Date.parse(`2026-11-11T${time}:00Z`)
+      // `?shadow` mounts the fixture in an open shadow root and adds an "Outside" button in the document before it; the
+      // calendar edit handler set up by "Focus Replace events after an edit" then focuses that button instead.
+      const shadow = new URLSearchParams(location.search).has('shadow')
+      const outside = document.createElement('button')
+      outside.type = 'button'
+      outside.textContent = 'Outside'
+      if (shadow) document.body.prepend(outside)
+      const refocusTarget = () => shadow ? outside : [...document.querySelectorAll('button')].find(button => button.textContent === 'Replace events')
 
-      createApp({
+      const app = createApp({
         setup() {
           // TaskBoard: the filter and the collapsed IDs are written inline, so every render passes a new function and a
           // new array with the same content.
@@ -40,9 +48,12 @@
           const calendar = ref()
           const events = shallowRef([{ id: 'review', label: 'Review', start: at('10:00'), end: at('11:00') }])
           const calendarLog = ref('none')
+          // When set, the edit handler applies the edit and focuses the "Replace events" button at once.
+          const refocusCalendar = ref(false)
 
           // A day view taller than its scroller, for edge auto-scroll and blank rejection reasons.
           const longEvents = shallowRef([{ id: 'standup', label: 'Standup', start: at('02:00'), end: at('03:00') }])
+          const longCalendar = ref()
           const longLog = ref('none')
           const rejectLongBlank = ref(false)
           const clock = time => new Date(time).toISOString().slice(11, 16)
@@ -77,6 +88,7 @@
             h('section', { 'aria-label': 'Calendar fixture' }, [
               control('Cancel edit', () => calendar.value.cancelEdit()),
               control('Replace events', () => { events.value = events.value.map(event => ({ ...event })) }),
+              control('Focus Replace events after an edit', () => { refocusCalendar.value = true }),
               h('output', { role: 'status', 'aria-label': 'Calendar log' }, calendarLog.value),
               h(EventCalendar, {
                 ref: calendar, events: events.value, date: at('10:00'), view: 'day', dayStart: 8, dayEnd: 14, height: 320,
@@ -85,15 +97,18 @@
                 onEdit: change => {
                   events.value = events.value.map(event => event.id === change.id ? { ...event, ...change.after } : event)
                   calendarLog.value = 'edit ' + change.id
+                  if (refocusCalendar.value) refocusTarget()?.focus()
                 },
                 onEditCancel: event => { calendarLog.value = `cancel ${event.eventIds.join(',')} ${event.reason}` },
               }),
             ]),
             h('section', { 'aria-label': 'Scrolling calendar fixture' }, [
               control('Reject edits with a blank reason', () => { rejectLongBlank.value = true }),
+              // scrollToTime reads the time of day of the time it is given, also of a day the view does not show.
+              control('Scroll to 03:00 the next day', () => longCalendar.value.scrollToTime(Date.parse('2026-11-12T03:00:00Z'))),
               h('output', { role: 'status', 'aria-label': 'Scrolling calendar log' }, longLog.value),
               h(EventCalendar, {
-                events: longEvents.value, date: at('10:00'), view: 'day', height: 240, labels: { region: 'Scrolling calendar' },
+                ref: longCalendar, events: longEvents.value, date: at('10:00'), view: 'day', height: 240, labels: { region: 'Scrolling calendar' },
                 validateEdit: () => rejectLongBlank.value ? '' : true,
                 onEdit: change => {
                   longEvents.value = longEvents.value.map(event => event.id === change.id ? { ...event, ...change.after } : event)
@@ -105,7 +120,18 @@
             ]),
           ])
         },
-      }).mount('#app')
+      })
+      if (shadow) {
+        const root = document.querySelector('#app').attachShadow({ mode: 'open' })
+        const style = document.createElement('link')
+        style.rel = 'stylesheet'
+        style.href = '/board-calendar-test/style.css'
+        const mount = document.createElement('div')
+        root.append(style, mount)
+        app.mount(mount)
+      } else {
+        app.mount('#app')
+      }
     </script>
   </body>
 </html>

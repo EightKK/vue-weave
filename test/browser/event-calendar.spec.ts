@@ -311,10 +311,10 @@ test('a rejected keyboard edit does not take the focus back after a later change
 })
 
 /** The regression fixture: a day view of one event with buttons that cancel through the API and replace the events. */
-async function openCalendarFixture(page: Page) {
+async function openCalendarFixture(page: Page, search = '') {
   const errors = pageErrors(page)
   await serveFixture(page, 'board-calendar-test', 'board-calendar.html')
-  await page.goto('/board-calendar-test/')
+  await page.goto('/board-calendar-test/' + search)
   const section = page.getByRole('region', { name: 'Calendar fixture', exact: true })
   const calendar = section.getByRole('region', { name: 'Fixture calendar', exact: true })
   await expect(calendar).toBeVisible()
@@ -325,6 +325,32 @@ async function openCalendarFixture(page: Page) {
     log: section.getByRole('status', { name: 'Calendar log', exact: true }),
   }
 }
+
+test('an edit handler that applies a keyboard edit and moves the focus elsewhere keeps the focus where it put it', async ({ page }) => {
+  const { errors, review, control, log } = await openCalendarFixture(page)
+  await control('Focus Replace events after an edit').click()
+  await review.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(log).toHaveText('edit review')
+  await expect(control('Replace events')).toBeFocused()
+  // Let the deferred focus of the calendar run, had it been requested.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
+  await expect(control('Replace events')).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('in a shadow root, an edit handler that moves the focus outside the root keeps it there', async ({ page }) => {
+  const { errors, review, control, log } = await openCalendarFixture(page, '?shadow')
+  await control('Focus Replace events after an edit').click()
+  await review.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(log).toHaveText('edit review')
+  const outside = page.getByRole('button', { name: 'Outside', exact: true })
+  await expect(outside).toBeFocused()
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
+  await expect(outside).toBeFocused()
+  expect(errors).toEqual([])
+})
 
 test('cancelEdit(), new events and pointer cancellation end a drag with their reasons and no proposal', async ({ page }) => {
   const { errors, review, control, log } = await openCalendarFixture(page)
@@ -421,6 +447,14 @@ test('Escape during an edge auto-scroll cancels the drag and stops scrolling', a
   expect(await scrollTop()).toBe(top)
   await page.mouse.up()
   await expect(log).toHaveText('cancel standup escape')
+  expect(errors).toEqual([])
+})
+
+test('scrollToTime scrolls to the time of day of the time it is given, whatever its day', async ({ page }) => {
+  const { errors, scroller, control } = await openScrollingCalendar(page)
+  // The view shows November 11; 03:00 on November 12 is three hours of 48 px below midnight, not 27.
+  await control('Scroll to 03:00 the next day').click()
+  await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBe(3 * 48)
   expect(errors).toEqual([])
 })
 

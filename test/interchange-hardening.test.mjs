@@ -39,6 +39,23 @@ test('fromDrawio orders containers listed children first by depth', () => {
   assert.deepEqual(imported.groups.map(group => [group.id, group.parentId]), [['a', undefined], ['b', 'a'], ['c', 'b']])
 })
 
+test('fromDrawio reads containers on a parent cycle as top-level groups, never as a group cycle', () => {
+  const cells = [
+    `<mxCell id="a" value="A" vertex="1" parent="b">${geometry}</mxCell>`,
+    `<mxCell id="b" value="B" vertex="1" parent="a">${geometry}</mxCell>`,
+    `<mxCell id="c" value="C" vertex="1" parent="a">${geometry}</mxCell>`,
+    `<mxCell id="n" value="N" vertex="1" parent="a">${geometry}</mxCell>`,
+    `<mxCell id="m" value="M" vertex="1" parent="b">${geometry}</mxCell>`,
+    `<mxCell id="k" value="K" vertex="1" parent="c">${geometry}</mxCell>`,
+  ]
+  const imported = fromDrawio(model(cells))
+  // The groups pointed at each other before, which every writer and NetworkGraph rejected.
+  assert.deepEqual(imported.groups.map(group => [group.id, group.parentId, group.nodeIds]), [
+    ['a', undefined, ['n']], ['b', undefined, ['m']], ['c', 'a', ['k']],
+  ])
+  assert.deepEqual(fromDrawio(toDrawio(imported)).groups.map(group => [group.id, group.parentId]), [['a', undefined], ['b', undefined], ['c', 'a']])
+})
+
 /** A chain of `depth` nested groups, each holding one node. */
 function nestedGroups(depth) {
   const nodes = [], groups = []
@@ -154,6 +171,29 @@ test('toDrawio keeps a node label with line breaks whole, with or without a deta
   assert.deepEqual(fromDrawio(other).nodes, [
     { id: 'x', label: 'First', detail: 'Second' }, { id: 'y', label: 'First', detail: 'Second' },
   ])
+})
+
+test('toMermaid and toDrawio treat marker names of Object.prototype like other unknown markers', () => {
+  const edge = { id: 'e', from: 'a', to: 'b' }
+  const graph = markers => ({ nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ ...edge, ...markers }] })
+  // The lookup found inherited functions: Mermaid wrote `a --function toString() { [native code] } b`, draw.io
+  // `endArrow=toString;startArrow=Object;`.
+  for (const name of ['toString', 'constructor', '__proto__']) {
+    assert.equal(toMermaid(graph({ markerEnd: name, markerStart: name })), toMermaid(graph({ markerEnd: 'unknown', markerStart: 'unknown' })))
+    assert.equal(toDrawio(graph({ markerEnd: name, markerStart: name })), toDrawio(graph({ markerEnd: 'unknown', markerStart: 'unknown' })))
+  }
+  assert.match(toMermaid(graph({ markerEnd: 'toString' })), / {2}a --> b\n/)
+  assert.match(toDrawio(graph({ markerEnd: 'toString' })), /style="endArrow=classic;endFill=1;startArrow=none;"/)
+})
+
+test('toDrawio keeps a multi-line label whole when it holds characters XML does not allow', () => {
+  // An unpaired surrogate made encodeURIComponent throw a URIError; a control character made the stored label differ
+  // from the written value, so the label was split at its line break.
+  const graph = {
+    nodes: [{ id: 'a', label: 'One\n\uD800two', detail: 'd' }, { id: 'b', label: 'One\n\u0001two￾' }],
+    edges: [],
+  }
+  assert.deepEqual(fromDrawio(toDrawio(graph)).nodes, [{ id: 'a', label: 'One\ntwo', detail: 'd' }, { id: 'b', label: 'One\ntwo' }])
 })
 
 test('draw.io HTML labels and Mermaid text decode only the character references XML allows', () => {

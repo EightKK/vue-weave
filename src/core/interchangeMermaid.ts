@@ -88,6 +88,9 @@ function readNodeText(raw: string) {
   return parts.length > 1 ? { label: parts[0]!, detail: parts.slice(1).join('\n') } : { label: parts[0]! }
 }
 
+/** The entry of `table` for `key`, or undefined for an unknown key, including the names of `Object.prototype`. */
+const ownValue = (table: Readonly<Record<string, string>>, key: string) => Object.hasOwn(table, key) ? table[key] : undefined
+
 const endChars: Record<GraphEdgeMarker, string> = { arrow: '>', 'open-arrow': '>', 'hollow-arrow': '>', diamond: '>', circle: 'o', bar: 'x', none: '' }
 const startChars: Record<GraphEdgeMarker, string> = { arrow: '<', 'open-arrow': '<', 'hollow-arrow': '<', diamond: '<', circle: 'o', bar: 'x', none: '' }
 
@@ -149,8 +152,8 @@ export function toMermaid(graph: GraphInterchangeInput, options: MermaidOptions 
     for (let i = children.length - 1; i >= 0; i--) stack.push({ group: children[i]!, close: false })
   }
   for (const edge of edges) {
-    const end = endChars[edge.markerEnd ?? 'arrow'] ?? '>'
-    const startChar = startChars[edge.markerStart ?? 'none'] ?? ''
+    const end = ownValue(endChars, edge.markerEnd ?? 'arrow') ?? '>'
+    const startChar = ownValue(startChars, edge.markerStart ?? 'none') ?? ''
     const start = end && startChar && (startChar === end || (startChar === '<' && end === '>')) ? startChar : ''
     let link = start + (end ? '--' + end : '---')
     if (edge.label !== undefined && edge.label !== '') link += `|"${mermaidText(edge.label)}"|`

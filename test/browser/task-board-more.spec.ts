@@ -135,6 +135,38 @@ test('moving the focus away from a picked-up card cancels the move with reason b
   expect(errors).toEqual([])
 })
 
+test('a move the parent has not applied when the focus leaves the card does not pull the focus back later', async ({ page }) => {
+  const { errors, card, button, lines } = await openBoard(page, '?ignoremoves')
+  await card('Alpha').focus()
+  await page.keyboard.press('Space')
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Space')
+  expect(await lines()).toEqual([['move', 'alpha', 'doing', 'web', 0, 'keyboard']])
+  await expect(card('Alpha')).toBeFocused()
+  // The focus moves on, and the cards change for another reason: the focus stays where the user put it.
+  await button('Replace cards').click()
+  await expect(button('Replace cards')).toBeFocused()
+  await button('Replace cards').click()
+  await expect(button('Replace cards')).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+for (const [name, search] of [['ignores the move and changes the cards', '?ignoremoves&refocus'], ['applies the move', '?refocus']]) {
+  test(`a parent that ${name} and moves the focus in its move handler keeps the focus where it put it`, async ({ page }) => {
+    const { errors, card, button, lines } = await openBoard(page, search)
+    await card('Alpha').focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Space')
+    expect(await lines()).toEqual([['move', 'alpha', 'doing', 'web', 0, 'keyboard']])
+    await expect(button('Replace cards')).toBeFocused()
+    // Let the deferred focus of the board run, had it not been cancelled.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))))
+    await expect(button('Replace cards')).toBeFocused()
+    expect(errors).toEqual([])
+  })
+}
+
 test('pointer cancellation and new source data end a drag without a proposal', async ({ page, browserName }) => {
   const { errors, board, card, press, lines } = await openBoard(page)
   // The mouse pointer ID is not fixed across engines (Chromium uses 1), so the synthetic cancellation reuses the ID of the press.

@@ -268,6 +268,14 @@ test('inspector list rejections show inline, keep the draft until Escape, and st
   await units.press('Enter')
   await expect(resources.locator('..').getByRole('alert')).toHaveText('Units for Crane must be a positive integer')
   await expect(events).toHaveText('["list-change-rejected","assignments","At most 3 units in total."]')
+  // Only decimal text is a number, as in number fields: a hexadecimal or binary literal is refused too.
+  for (const text of ['0x2', '0b10']) {
+    await units.fill(text)
+    await units.press('Enter')
+    await expect(units).toHaveAttribute('aria-invalid', 'true')
+    await expect(resources.locator('..').getByRole('alert')).toHaveText('Units for Crane must be a positive integer')
+  }
+  await expect(events).toHaveText('["list-change-rejected","assignments","At most 3 units in total."]')
   // New source data under a draft drops it and its message.
   await page.evaluate(() => (window as any).changeRemotely())
   await expect(units).toHaveValue('2')
@@ -346,6 +354,24 @@ test('inspector list fields stay controlled and work right to left in the dark t
   const select = (await resources.getByRole('combobox', { name: 'Resource for Crane' }).boundingBox())!
   const box = (await resources.getByRole('textbox', { name: 'Units for Crane' }).boundingBox())!
   expect(box.x).toBeLessThan(select.x)
+  expect(errors).toEqual([])
+})
+
+test('focusField on a read-only list field focuses its first control that can take the focus', async ({ page }) => {
+  const { errors, resources, events } = await openInspectorFixture(page, '?readonly')
+  // The selects of a read-only table are disabled; its units box is read-only and still takes the focus.
+  await expect(resources.getByRole('combobox', { name: 'Resource for Crane', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Focus resources', exact: true }).click()
+  await expect(resources.getByRole('textbox', { name: 'Units for Crane', exact: true })).toBeFocused()
+  await expect(events).toHaveText('["focus",true]')
+  expect(errors).toEqual([])
+})
+
+test('focusField reports success inside a shadow root, where document.activeElement is the shadow host', async ({ page }) => {
+  const { errors, resources, events } = await openInspectorFixture(page, '?shadow')
+  await page.getByRole('button', { name: 'Focus resources', exact: true }).click()
+  await expect(resources.getByRole('combobox', { name: 'Resource for Crane', exact: true })).toBeFocused()
+  await expect(events).toHaveText('["focus",true]')
   expect(errors).toEqual([])
 })
 

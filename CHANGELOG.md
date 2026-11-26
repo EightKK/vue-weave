@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## 1.7.1 - 2026-11-26
+
+A patch release of bug fixes found by an exploratory review of the core, the components and the test suite. No API changes.
+
+### Fixed
+
+- `parseFieldValue` reads a `duration` in larger units (`unitSize`) back as the exact value `formatFieldValue` wrote; 31 minutes shown in hours no longer reads as 1860000.0000000002 ms. Of the values that read back that way, one inside `min` and `max` is preferred, so a bound such as `0.29 * 100` is accepted from its own text.
+- `projectTimelineRows` and `projectTimelineView` pass row summaries to `column.value` when sorting, as the search and filters already did, so summary rows sort by their rolled-up values.
+- `formatSheetText` ends the text with a line break when several records end with a single empty cell, so `parseSheetText` reads the empty last record back. A GanttChart copy of a column ending in an empty cell no longer pastes as one value that fills the whole selection.
+- `fromDrawio` reads container cells whose parents form a cycle as top-level groups instead of returning groups whose `parentId`s form a cycle.
+- `toDrawio` no longer throws a `URIError` for a multi-line node label with an unpaired surrogate, and keeps such a label whole on reading back when it holds characters XML does not allow.
+- `toMermaid` and `toDrawio` treat edge marker names of `Object.prototype` (such as `toString` or `constructor`) like other unknown markers instead of writing function text into the output.
+- `filterGraph` throws `RangeError('Unknown search field')` for an unknown text-search field, as `searchGraphNodes` does, instead of silently matching nothing.
+- `routeGraphEdges` with `parallelSpacing` keeps spread orthogonal routes axis-aligned and on their box sides when the box centres differ only by a rounding error (as radial layouts produce), with and without `avoidNodes`.
+- Orthogonal edge ends reach circle, stadium and other flowchart outlines when the box centres differ only by a rounding error.
+- `findOrthogonalRoute` finds a route without obstacles when the ends face away from each other or the route has to turn back, instead of returning undefined.
+- `layoutGraphIncrementally` sizes the layout to include a self-loop on the right-most node.
+- `layoutForceGraph` no longer draws an edge between the wrong nodes when node IDs contain a NUL character.
+- `applyRecurringEdit`: an override that the `series` or `following` scope moves now takes the ID of its new occurrence (when it had the default `<seriesId>:<recurrenceId>` ID), so expanded events no longer share IDs and later occurrence edits no longer throw `Duplicate event ID`. When another event already has that ID, or two moved overrides would take the same one (as on both sides of a daylight saving change), the override keeps its old ID (and so, in turn, may another moved override whose new ID that is); when an old ID is taken as well, by an event or by an occurrence a series generates on expansion (times that are not whole milliseconds included), the edit throws `Duplicate event ID`, so neither the result nor its expansion has duplicate IDs.
+- `expandRecurrence` and `expandRecurringEvents` keep the first instance of a series whose UNTIL is before its start, as documented (RFC 5545 3.8.5.3).
+- `serializeWeaveSnapshot` reports keys named like built-in object properties (`constructor`, `toString`, …) in `data`, `metadata` and `view` as unknown fields instead of silently dropping them.
+- `eventCalendarRange`, `eventCalendarDays`, `eventCalendarMonthGrid` and `shiftEventCalendarDate` no longer read the years 0 to 99 as 1900 to 1999.
+- `deleteTreeGridRows` no longer throws "Maximum call stack size exceeded" when a deleted row has more than about 120,000 children.
+- `toCsv` writes a number below 1e-6 in plain decimal notation (`0.0000005`, not `5e-7`), and `timelineFromCsvTable` reads such a number cell in the progress column, so a timeline progress below 1e-6 reads back from its own export. `timelineCsvTable` cells keep their number type.
+- `useLinkedSelection.select` no longer treats a selection that repeated a target as unchanged when the new selection adds a different target of the same count.
+- NetworkGraph cancels a gesture in flight when the `dir` prop changes the direction, not only when an inherited direction changes under `dir="auto"`.
+- TaskBoard no longer moves the keyboard focus back to a moved card when the parent did not apply the move before the focus left the card, including when the parent applies the move or changes the cards and moves the focus in its `card-move` handler. EventCalendar no longer takes the focus back after a keyboard edit when the `edit` handler moved it to another element, also from inside a shadow root to an element outside it.
+- PropertyInspector `focusField` focuses the first control of a read-only list field that can take the focus and returns false when a field's control cannot take the focus (a read-only checkbox, select or colour field) instead of claiming success; inside a shadow root it checks the focus of that root.
+- EventCalendar `scrollToTime(time)` scrolls to the time of day of `time` whatever its day; before, a time on another day than the first shown day scrolled whole days further, to the bottom of the grid.
+- PropertyInspector units and lag boxes accept decimal numbers only, like number fields; literals such as `0x10` are refused instead of being read as numbers.
+
 ## 1.7.0 - 2026-11-25
 
 Brings the later components closer to NetworkGraph and GanttChart: TreeGrid gains column resizing, header sorting and header filtering, EventCalendar an agenda view and working touch editing, and TaskBoard, EventCalendar and TreeGrid export to SVG and PNG. `levelResources` no longer slows down quadratically on long horizons, and a culled NetworkGraph re-routes only the edges a change can affect. The less-covered components get server-rendering, browser and structural accessibility tests.

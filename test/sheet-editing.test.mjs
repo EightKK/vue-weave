@@ -28,6 +28,16 @@ test('formatSheetText quotes cells with tabs, line breaks or quotes and round-tr
   assert.deepEqual(parseSheetText(text), records)
 })
 
+test('formatSheetText keeps an empty last record of one cell, which a single trailing line break would lose', () => {
+  // Two lines of one column whose last cell is empty: without the extra line break, a paste read "5" as one value.
+  assert.equal(formatSheetText([['5'], ['']]), '5\r\n\r\n')
+  assert.deepEqual(parseSheetText(formatSheetText([['5'], ['']])), [['5'], ['']])
+  assert.deepEqual(parseSheetText(formatSheetText([['5'], [''], ['']])), [['5'], [''], ['']])
+  assert.equal(formatSheetText([['']]), '')
+  assert.equal(formatSheetText([['5', '']]), '5\t')
+  assert.equal(formatSheetText([['5'], ['', '']]), '5\r\n\t')
+})
+
 test('applyTimelineSheetEdit applies field then cell edits in one step without mutating the rows', () => {
   const rows = Object.freeze([
     Object.freeze({ id: 'a', label: 'A', hours: 1, owner: 'x' }),

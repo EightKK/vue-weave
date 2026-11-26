@@ -58,13 +58,16 @@ export function parseSheetText(text: string): string[][] {
 /**
  * Write records of cells as tab-separated text with CRLF line breaks, as spreadsheet applications read it. A cell that
  * contains a tab, a line break or a double quote is quoted, with inner quotes doubled, so {@link parseSheetText} reads
- * the same records back.
+ * the same records back. When several records end with one that is a single empty cell, the text ends with a line
+ * break, which `parseSheetText` drops, so that the empty last record is kept.
  */
 export function formatSheetText(records: readonly (readonly string[])[]): string {
-  return records.map(record => record.map(cell => {
+  const text = records.map(record => record.map(cell => {
     const value = String(cell)
     return /["\t\r\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value
   }).join('\t')).join('\r\n')
+  const last = records[records.length - 1]
+  return records.length > 1 && last!.length === 1 && String(last![0]) === '' ? text + '\r\n' : text
 }
 
 /** The edits of a GanttChart `sheet-edit` batch, a `field-edit` or a `cell-edit`, as {@link applyTimelineSheetEdit} reads them. */

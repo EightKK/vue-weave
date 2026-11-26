@@ -311,6 +311,10 @@ test('serialize rejects values it would otherwise lose', () => {
     [{ ...base, data: { ...base.data, positions: new Map([['b', { x: 0, y: 0 }]]) } }, 'reference'],
     [{ ...base, view: { graph: { collapsedGroupIds: ['g'] } } }, 'structure'],
     [{ ...base, metadata: { savedAt: 'yesterday' } }, 'structure'],
+    // Unknown keys named like inherited members are reported, not silently dropped.
+    [{ ...base, data: { ...base.data, constructor: 1 } }, 'structure'],
+    [{ ...base, metadata: { title: 'T', toString: 'x' } }, 'structure'],
+    [{ ...base, view: { graph: { valueOf: 1 } } }, 'structure'],
   ]
   for (const [input, code] of failing) {
     assert.throws(() => serializeWeaveSnapshot(input), error => error instanceof WeaveSnapshotError && error.diagnostics.some(item => item.code === code),

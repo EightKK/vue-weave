@@ -142,8 +142,12 @@ test('the focused cell stays rendered and focused through far wheel scrolls, wit
   await grid.hover()
   for (let i = 0; i < 6; i++) await page.mouse.wheel(600, 900)
   await expect.poll(() => grid.evaluate(el => el.scrollTop)).toBeGreaterThan(2000)
-  for (let i = 0; i < 6; i++) await page.mouse.wheel(-600, -900)
-  await expect.poll(() => grid.evaluate(el => el.scrollTop)).toBe(0)
+  // WebKit can apply or coalesce wheel events late, so six steps back do not always undo six steps down: wheel up
+  // until the grid is at the top.
+  await expect(async () => {
+    await page.mouse.wheel(-600, -900)
+    expect(await grid.evaluate(el => el.scrollTop)).toBe(0)
+  }).toPass()
   for (let i = 0; i < 6; i++) await page.mouse.wheel(1200, 1200)
   expect(await focused(page)).toMatchObject({ role: 'gridcell', col: 3, row: 5, inGrid: true })
   expect(await page.evaluate(() => (window as unknown as { __blurs: number }).__blurs)).toBe(0)

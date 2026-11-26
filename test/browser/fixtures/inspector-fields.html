@@ -53,7 +53,7 @@
           // Escape pressed in a field with a draft or a message is handled there and does not reach this element.
           return () => h('main', { style: 'width: 380px; padding: 12px', onKeydown: event => { if (event.key === 'Escape') record('escape-reached') } }, [
             h('div', { style: 'display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px' }, [
-              ...['name', 'count', 'state', 'code', 'missing'].map(id => control('Focus ' + id, () => record('focus', id, inspector.value.focusField(id)))),
+              ...['name', 'count', 'state', 'code', 'lockedDone', 'missing'].map(id => control('Focus ' + id, () => record('focus', id, inspector.value.focusField(id)))),
               control('Cancel edits', () => inspector.value.cancelEdits()),
               control('Other item', () => { item.value = { ...first, id: 'two', name: 'Cut' } }),
               control('Rename remotely', () => { item.value = { ...item.value, name: 'Remote' } }),

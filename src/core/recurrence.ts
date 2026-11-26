@@ -37,7 +37,10 @@ export interface RecurrenceRule {
   interval?: number
   /** COUNT: the number of instances, the first one included. Not together with `until`. */
   count?: number
-  /** UNTIL in epoch milliseconds, inclusive: the last instance starts at or before it. Not together with `count`. */
+  /**
+   * UNTIL in epoch milliseconds, inclusive: the last rule instance starts at or before it (the first instance, DTSTART,
+   * is part of the set even when it is later). Not together with `count`.
+   */
   until?: number
   /** BYDAY. Ordinals are allowed with MONTHLY and YEARLY only. */
   byWeekday?: readonly RecurrenceWeekday[]
@@ -559,7 +562,8 @@ function visitRule(series: PreparedSeries, visit: (start: number, wall: number) 
     if (rule.count !== undefined && count >= rule.count) return
     count++
     const start = wall === series.startWall ? series.start : series.clock.instant(wall)
-    if (rule.until !== undefined && start > rule.until) return
+    // DTSTART is always the first instance (RFC 5545 section 3.8.5.3), even with an UNTIL before it.
+    if (rule.until !== undefined && start > rule.until && wall !== series.startWall) return
     if (!visit(start, wall)) return
   }
 }
@@ -719,6 +723,8 @@ interface EditContext<E extends CalendarEvent> {
   recurrenceId: number
   /** The zone of the series as given, or the fallback zone, for writing a rule given as text. */
   zone: RecurrenceZoneOptions
+  /** `options.timeZone`: the zone of series without a zone of their own. */
+  fallbackZone: string | undefined
   change: RecurringEditChange | 'delete'
 }
 
@@ -733,6 +739,84 @@ interface EditMove {
 function isOverrideOf(event: CalendarEvent | undefined, seriesId: string, at?: number) {
   return !!event && event.recurrence === undefined && event.seriesId === seriesId && event.recurrenceId !== undefined
     && (at === undefined || event.recurrenceId === at)
+}
+
+/**
+ * An override that `series` or `following` moves to `recurrenceId` of the series `seriesId`. An override with the ID that
+ * `occurrence` gives it (`<seriesId>:<recurrenceId>`) takes the ID of its new occurrence, so it can never share an ID with
+ * an occurrence the series generates later; another ID is kept. The old ID of a renamed override is recorded in
+ * `renamed`, so that `settleMovedIds` can restore it when the new ID is taken.
+ */
+function movedOverride<E extends CalendarEvent>(event: E, oldSeriesId: string, seriesId: string, recurrenceId: number, renamed: Map<E, string>): E {
+  const id = event.id === `${oldSeriesId}:${event.recurrenceId}` ? `${seriesId}:${recurrenceId}` : event.id
+  const moved = { ...event, id, seriesId, recurrenceId }
+  if (id !== event.id) renamed.set(moved, event.id)
+  return moved
+}
+
+/**
+ * A test of whether an ID is the ID of an occurrence that a series of `events` generates on expansion
+ * (`<series id>:<start>`, not replaced by an override): such an ID is taken although no event of the list has it. The
+ * start is the text after the last colon, as `String` writes it (fractional and negative times included), so the
+ * split is unambiguous. Series and overrides are indexed once, and each series is prepared at most once.
+ */
+function generatedIds(events: readonly CalendarEvent[], fallbackZone: string | undefined) {
+  const series = new Map<string, CalendarEvent>()
+  const overridden = new Set<string>()
+  for (const event of events) {
+    if (event.recurrence !== undefined) series.set(event.id, event)
+    else if (event.seriesId !== undefined && event.recurrenceId !== undefined) overridden.add(overrideKey(event.seriesId, event.recurrenceId))
+  }
+  const prepared = new Map<string, PreparedSeries>()
+  const known = new Map<string, boolean>()
+  return (id: string) => {
+    let generated = known.get(id)
+    if (generated !== undefined) return generated
+    generated = false
+    const colon = id.lastIndexOf(':')
+    const event = colon < 0 ? undefined : series.get(id.slice(0, colon))
+    const time = Number(id.slice(colon + 1))
+    if (event && Number.isFinite(time) && String(time) === id.slice(colon + 1) && !overridden.has(overrideKey(event.id, time))) {
+      let ready = prepared.get(event.id)
+      if (!ready) prepared.set(event.id, ready = prepare(seriesOf(event), fallbackZone))
+      generated = expandPrepared(ready, { start: time, end: time + 1 }, Number.MAX_SAFE_INTEGER).some(occurrence => occurrence.recurrenceId === time)
+    }
+    known.set(id, generated)
+    return generated
+  }
+}
+
+/**
+ * Settle the IDs of the overrides of `renamed` (moved overrides with a new ID, mapped to their old ID). A new ID that
+ * another event has, or that a series generates on expansion, is given up for the old ID; giving one up can take an ID
+ * another override uses, so this repeats until nothing changes. Only new IDs are given up, so it ends after at most one
+ * pass per override. When an override's old ID is still not free at the end, the edit throws instead of returning events
+ * whose IDs, or their expansion's, collide.
+ */
+function settleMovedIds<E extends CalendarEvent>(events: E[], renamed: Map<E, string>, fallbackZone: string | undefined): E[] {
+  if (renamed.size === 0) return events
+  const result = events.slice()
+  const generated = generatedIds(result, fallbackZone)
+  const counts = new Map<string, number>()
+  const count = (id: string, by: number) => counts.set(id, (counts.get(id) ?? 0) + by)
+  for (const event of result) count(event.id, 1)
+  const taken = (id: string) => counts.get(id)! > 1 || generated(id)
+  const moved = new Set<number>()
+  for (let at = 0; at < result.length; at++) if (renamed.has(result[at]!)) moved.add(at)
+  for (let changed = true; changed;) {
+    changed = false
+    for (const at of moved) {
+      const event = result[at]!
+      const old = renamed.get(event)
+      if (old === undefined || !taken(event.id)) continue
+      count(event.id, -1)
+      count(old, 1)
+      result[at] = { ...event, id: old }
+      changed = true
+    }
+  }
+  for (const at of moved) if (taken(result[at]!.id)) throw new Error('Duplicate event ID: ' + result[at]!.id)
+  return result
 }
 
 function withResource<E extends CalendarEvent>(context: EditContext<E>, event: E): E {
@@ -792,8 +876,9 @@ function editSeries<E extends CalendarEvent>(context: EditContext<E>): E[] {
       ...(recurrence.rdates ? { rdates: prepared.rdates.map(move.shift) } : {}),
     },
   })
-  return events.filter(event => !isOverrideOf(event, series.id, recurrenceId))
-    .map(event => event === series ? next : isOverrideOf(event, series.id) ? { ...event, recurrenceId: move.shift(event.recurrenceId!) } : event)
+  const renamed = new Map<E, string>()
+  return settleMovedIds(events.filter(event => !isOverrideOf(event, series.id, recurrenceId))
+    .map(event => event === series ? next : isOverrideOf(event, series.id) ? movedOverride(event, series.id, series.id, move.shift(event.recurrenceId!), renamed) : event), renamed, context.fallbackZone)
 }
 
 /**
@@ -854,13 +939,14 @@ function editFollowing<E extends CalendarEvent>(context: EditContext<E>, options
     },
   })
   const result: E[] = []
+  const renamed = new Map<E, string>()
   for (const event of events) {
     if (event === series) result.push(truncated, following)
     else if (isOverrideOf(event, series.id, recurrenceId)) continue
-    else if (isOverrideOf(event, series.id) && event.recurrenceId! > recurrenceId) result.push({ ...event, seriesId: newId, recurrenceId: move.shift(event.recurrenceId!) })
+    else if (isOverrideOf(event, series.id) && event.recurrenceId! > recurrenceId) result.push(movedOverride(event, series.id, newId, move.shift(event.recurrenceId!), renamed))
     else result.push(event)
   }
-  return result
+  return settleMovedIds(result, renamed, context.fallbackZone)
 }
 
 /**
@@ -880,6 +966,12 @@ function editFollowing<E extends CalendarEvent>(context: EditContext<E>, options
  * - `series`: the whole series moves by the change of the occurrence in local wall-clock time and takes its new
  *   duration; exdates, rdates, UNTIL and the `recurrenceId`s of overrides move with it. A delete removes the series and
  *   its overrides.
+ *
+ * An override that `series` or `following` moves to another `recurrenceId` (or to the new series) and has the ID that
+ * `occurrence` gives it (`<seriesId>:<recurrenceId>`) takes the ID of its new occurrence, so it never shares an ID with
+ * an occurrence of the series; an override with another ID keeps it. When another event already has that new ID (or
+ * another moved override takes it too), the override keeps its old ID instead; when an event or an occurrence the edited
+ * series generates has the old ID as well, the edit throws, so neither the result nor its expansion has duplicate IDs.
  *
  * When the change moves the occurrence to another local day, BYDAY weekdays and BYMONTHDAY days move by the same number
  * of days; the other parts of the rule are kept. A move to another day throws an Error when it would change what the
@@ -909,7 +1001,7 @@ export function applyRecurringEdit<E extends CalendarEvent>(
   }
   const zone: RecurrenceZoneOptions = recurrence.timeZone !== undefined || recurrence.utcOffsetMinutes !== undefined
     ? { timeZone: recurrence.timeZone, utcOffsetMinutes: recurrence.utcOffsetMinutes } : { timeZone: options.timeZone }
-  const context: EditContext<E> = { events, series, recurrence, prepared: prepare(seriesOf(series), options.timeZone), recurrenceId, zone, change }
+  const context: EditContext<E> = { events, series, recurrence, prepared: prepare(seriesOf(series), options.timeZone), recurrenceId, zone, fallbackZone: options.timeZone, change }
   if (scope === 'occurrence') return editOccurrence(context)
   if (scope === 'series' || recurrenceId <= series.start) return editSeries(context)
   return editFollowing(context, options)

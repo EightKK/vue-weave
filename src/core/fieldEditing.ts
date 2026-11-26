@@ -151,6 +151,36 @@ function parseTimeText(text: string, defaultOffset: number | undefined, format?:
 
 const dayMs = 86_400_000
 
+/** The float next to `value` towards `direction` (+1 or -1), for finite values. */
+function nextFloat(value: number, direction: number) {
+  if (value === 0) return direction * Number.MIN_VALUE
+  const view = new DataView(new ArrayBuffer(8))
+  view.setFloat64(0, value)
+  view.setBigInt64(0, view.getBigInt64(0) + ((value > 0) === (direction > 0) ? 1n : -1n))
+  return view.getFloat64(0)
+}
+
+/**
+ * A duration of `units` units of `unitSize`, chosen so that the formatter writes the same number back: `units *
+ * unitSize` can round to a value whose quotient by `unitSize` is not `units`, as 31 minutes in hours (0.5166666666666667 h)
+ * would read as 1860000.0000000002 ms. An integer is preferred, then the product, then its nearest neighbours; a
+ * candidate inside `[min, max]` is preferred over one outside, so a bound such as `max: 0.29 * 100`, shown as 0.29,
+ * reads back from that text as the bound itself.
+ */
+function fromUnits(units: number, unitSize: number, min = -Infinity, max = Infinity) {
+  const product = units * unitSize
+  if (unitSize === 1 || !Number.isFinite(product)) return product
+  const candidates = [Math.round(product), product]
+  let below = product, above = product
+  for (let step = 0; step < 4; step++) {
+    below = nextFloat(below, -1)
+    above = nextFloat(above, 1)
+    candidates.push(below, above)
+  }
+  const exact = candidates.filter(value => value / unitSize === units)
+  return exact.find(value => value >= min && value <= max) ?? (product >= min && product <= max ? product : exact[0] ?? product)
+}
+
 /**
  * Whether a local wall time (expressed as if it were UTC) occurs twice in a zone, as it does when clocks go back.
  * Zone rules change at most once within two days, so there are at most two candidate offsets.
@@ -395,7 +425,7 @@ export function parseFieldValue(spec: TimelineFieldSpec<any>, text: string): Fie
         if (!NUMBER_TEXT.test(body)) return fail('invalid', 'Not a number: ' + trimmed)
         const number = Number(body)
         if (!Number.isFinite(number)) return fail('invalid', 'Not a finite number: ' + trimmed)
-        value = spec.kind === 'duration' ? number * (spec.unitSize ?? 1) : number
+        value = spec.kind === 'duration' ? fromUnits(number, spec.unitSize ?? 1, spec.min, spec.max) : number
         if (!Number.isFinite(value)) return fail('invalid', 'The duration is too large: ' + trimmed)
         break
       }

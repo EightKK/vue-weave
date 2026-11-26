@@ -57,6 +57,29 @@ test('findOrthogonalRoute goes around a blocking box with the clearance and keep
   assert.deepEqual(findOrthogonalRoute(from, to, [source, target]), [{ x: 100, y: 25 }, { x: 300, y: 25 }])
 })
 
+test('findOrthogonalRoute without obstacles turns back between ends that face away from each other', () => {
+  // With no obstacle edges the search grid once had a single line across the flow, so a route that had to turn back
+  // was reported as not found although nothing is in the way.
+  for (const [from, to] of [
+    [{ x: 300, y: 250, side: 'right' }, { x: 200, y: 250, side: 'left' }],
+    [{ x: -100, y: 50, side: 'right' }, { x: -300, y: 50, side: 'left' }],
+    [{ x: 100, y: 50, side: 'top' }, { x: 100, y: 150, side: 'bottom' }],
+    [{ x: 300, y: 250, side: 'right' }, { x: 300, y: 250, side: 'left' }],
+  ]) {
+    const route = findOrthogonalRoute(from, to, [])
+    assert.ok(route, JSON.stringify([from, to]))
+    assert.deepEqual(route[0], { x: from.x, y: from.y })
+    assert.deepEqual(route[route.length - 1], { x: to.x, y: to.y })
+    assertOrthogonal(route)
+    assertSides(route, from.side, to.side)
+  }
+  // In a nonnegative frame the stub towards a negative coordinate stops at 0, and the route still exists.
+  const clamped = findOrthogonalRoute({ x: 100, y: 50, side: 'right' }, { x: 0, y: 50, side: 'left' }, [])
+  assert.ok(clamped)
+  assertOrthogonal(clamped)
+  for (const point of clamped) assert.ok(point.x >= 0 && point.y >= 0)
+})
+
 test('findOrthogonalRoute is deterministic and does not depend on the obstacle order', () => {
   const obstacles = []
   for (let i = 0; i < 40; i++) obstacles.push({ x: 60 + (i % 8) * 70, y: 40 + Math.floor(i / 8) * 60, width: 40, height: 30 })

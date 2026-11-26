@@ -11,6 +11,16 @@ import type { ChartTone } from './types.js'
 const dayMs = 86_400_000
 
 /**
+ * The wall midnight of a civil date; `monthIndex` from 0 and `day` from 1 may overflow into the next month or year.
+ * Unlike `Date.UTC`, which reads the years 0 to 99 as 1900 to 1999, every year is taken as given.
+ */
+function dateWall(year: number, monthIndex: number, day: number) {
+  const date = new Date(0)
+  date.setUTCFullYear(year, monthIndex, day)
+  return date.getTime()
+}
+
+/**
  * A view of EventCalendar that a calendar without the agenda shows: one day, one week or the weeks of one month. The
  * view values EventCalendar emits and passes to its slots are of this type unless the calendar opts into the agenda
  * (see `EventCalendarViewName`), so code written for these three views keeps compiling.
@@ -302,8 +312,8 @@ function viewWalls(view: EventCalendarViewName, date: number, zone: Zone, weekSt
     return { first, end: first + 7 * dayMs }
   }
   const at = new Date(midnight)
-  const monthStart = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)
-  const monthEnd = Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1)
+  const monthStart = dateWall(at.getUTCFullYear(), at.getUTCMonth(), 1)
+  const monthEnd = dateWall(at.getUTCFullYear(), at.getUTCMonth() + 1, 1)
   const first = weekStartWall(monthStart, weekStartsOn)
   const end = weekStartWall(monthEnd - dayMs, weekStartsOn) + 7 * dayMs
   return { first, end, monthStart, monthEnd }
@@ -366,8 +376,8 @@ export function shiftEventCalendarDate(view: EventCalendarViewName, date: number
     return zonedInstant(zone, wall + steps * days * dayMs)
   }
   const at = new Date(wall)
-  const target = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + steps, 1))
-  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+  const target = new Date(dateWall(at.getUTCFullYear(), at.getUTCMonth() + steps, 1))
+  const last = new Date(dateWall(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
   target.setUTCDate(Math.min(at.getUTCDate(), last))
   target.setUTCHours(at.getUTCHours(), at.getUTCMinutes(), at.getUTCSeconds(), at.getUTCMilliseconds())
   return zonedInstant(zone, target.getTime())

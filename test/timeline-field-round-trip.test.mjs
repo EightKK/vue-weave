@@ -202,3 +202,24 @@ test('a repeated wall time formats with its offset and parses back to the same i
   assert.deepEqual(roundTrip(sydney, back + 3_600_000), { text: '2026-04-05 02:30 +10:00', parsed: { ok: true, value: back + 3_600_000 } })
   assert.equal(formatFieldValue({ ...ny, timeZone: undefined, utcOffsetMinutes: -300 }, later), '2026-11-01 01:30')
 })
+
+test('a duration in larger units reads back as the value it was formatted from', () => {
+  const hours = { id: 'work', kind: 'duration', unitSize: 3_600_000, unitLabel: ' h' }
+  // 31 minutes is 0.5166666666666667 h, and 0.5166666666666667 × 3600000 is 1860000.0000000002 in floating point.
+  assert.equal(formatFieldValue(hours, 1_860_000), '0.5166666666666667 h')
+  assert.deepEqual(parseFieldValue(hours, '0.5166666666666667 h'), { ok: true, value: 1_860_000 })
+  for (const unitSize of [3_600_000, 28_800_000, 86_400_000, 7]) {
+    const spec = { id: 'work', kind: 'duration', unitSize }
+    for (let value = 0; value <= 3_000_000; value += 997) {
+      assert.deepEqual(parseFieldValue(spec, formatFieldValue(spec, value)), { ok: true, value }, `${value} in units of ${unitSize}`)
+    }
+  }
+  assert.deepEqual(parseFieldValue(hours, '1.5 h'), { ok: true, value: 5_400_000 })
+
+  // A bound that is not a whole number reads back from its own text: 0.29 × 100 is 28.999999999999996, shown as 0.29.
+  const bounded = { id: 'work', kind: 'duration', unitSize: 100, min: 0.07 * 100, max: 0.29 * 100 }
+  assert.equal(formatFieldValue(bounded, bounded.max), '0.29')
+  assert.deepEqual(parseFieldValue(bounded, '0.29'), { ok: true, value: bounded.max })
+  assert.deepEqual(parseFieldValue(bounded, formatFieldValue(bounded, bounded.min)), { ok: true, value: bounded.min })
+  assert.equal(parseFieldValue(bounded, '0.3').ok, false)
+})

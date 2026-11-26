@@ -384,15 +384,15 @@ function detectDirection() {
   directionObserver = undefined
   if (props.dir !== 'auto' || !element || typeof MutationObserver === 'undefined') return
   directionObserver = new MutationObserver(() => {
-    const before = inheritedRtl.value
     inheritedRtl.value = props.dir === 'auto' && getComputedStyle(element).direction === 'rtl'
-    if (inheritedRtl.value !== before) cancelInteraction()
   })
   for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
     directionObserver.observe(ancestor, { attributes: true, attributeFilter: ['dir'] })
   }
 }
 watch(() => props.dir, detectDirection, { flush: 'post' })
+// Any change of direction (the `dir` prop, or an inherited direction with `dir="auto"`) cancels a gesture in flight.
+watch(rtl, () => cancelInteraction())
 const viewport = ref({ width: 1150, height: 270 })
 const options = computed<GraphLayeredLayoutOptions>((previous) => {
   const next = props.options
