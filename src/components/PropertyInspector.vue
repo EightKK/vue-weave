@@ -394,8 +394,11 @@ defineExpose({
     // A list field's ID is on its table group: focus its first control that can take the focus (a read-only table has
     // disabled selects and read-only boxes).
     const element = target?.dataset.vwList ? target.querySelector<HTMLElement>('select:not(:disabled), input:not(:disabled), button:not(:disabled)') : target
-    element?.focus()
-    return Boolean(element) && element === document.activeElement
+    if (!element) return false
+    element.focus()
+    // Inside a shadow root, document.activeElement is the shadow host; the root of the element knows its own focus.
+    const scope = element.getRootNode() as Document | ShadowRoot
+    return element === ('activeElement' in scope ? scope.activeElement : document.activeElement)
   },
   /** Drops every draft and message without a proposal. */
   cancelEdits() {

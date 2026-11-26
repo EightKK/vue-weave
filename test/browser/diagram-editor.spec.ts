@@ -367,6 +367,14 @@ test('focusField on a read-only list field focuses its first control that can ta
   expect(errors).toEqual([])
 })
 
+test('focusField reports success inside a shadow root, where document.activeElement is the shadow host', async ({ page }) => {
+  const { errors, resources, events } = await openInspectorFixture(page, '?shadow')
+  await page.getByRole('button', { name: 'Focus resources', exact: true }).click()
+  await expect(resources.getByRole('combobox', { name: 'Resource for Crane', exact: true })).toBeFocused()
+  await expect(events).toHaveText('["focus",true]')
+  expect(errors).toEqual([])
+})
+
 test('the diagram editor speaks Japanese on the Japanese page', async ({ page }) => {
   const errors = pageErrors(page)
   const demo = await openExample(page, 'diagram-editor', { locale: 'ja' })

@@ -293,6 +293,34 @@ test('an override that a series edit moves takes the ID of its new occurrence, s
   ])
 })
 
+test('a moved override keeps its old ID when its new occurrence ID is taken, so a series edit never duplicates IDs', () => {
+  const start = utc('2026-11-02T09:00')
+  const week = 7 * day
+  const series = { id: 's', label: 'S', start, end: start + hour, recurrence: { rule: 'FREQ=WEEKLY;COUNT=4' } }
+  const override = { id: 's:' + (start + week), label: 'S', start: start + week + hour, end: start + week + 2 * hour, seriesId: 's', recurrenceId: start + week }
+  // An unrelated event already has the ID the override would take.
+  const other = { id: 's:' + (start + 2 * week), label: 'Other', start: 0, end: hour }
+  const moved = applyRecurringEdit([series, override, other], { seriesId: 's', recurrenceId: start }, { start: start + week, end: start + week + hour }, 'series')
+  assert.deepEqual(moved.map(event => event.id), ['s', 's:' + (start + week), 's:' + (start + 2 * week)])
+  assert.equal(moved[1].recurrenceId, start + 2 * week)
+  // `following` the same way: the later override would take the ID `n:<recurrenceId>` of the new series.
+  const later = { ...override, id: 's:' + (start + 2 * week), start: start + 2 * week, end: start + 2 * week + hour, recurrenceId: start + 2 * week }
+  const split = applyRecurringEdit([series, later, { ...other, id: 'n:' + (start + 2 * week + hour) }], { seriesId: 's', recurrenceId: start + week },
+    { start: start + week + hour, end: start + week + 2 * hour }, 'following', { newSeriesId: 'n' })
+  assert.deepEqual(split.map(event => [event.id, event.seriesId, event.recurrenceId]), [
+    ['s', undefined, undefined], ['n', undefined, undefined], ['s:' + (start + 2 * week), 'n', start + 2 * week + hour], ['n:' + (start + 2 * week + hour), undefined, undefined],
+  ])
+
+  // Two overrides on both sides of the end of daylight saving time move to the same occurrence of the next day.
+  const fold = Date.parse('2026-11-01T01:30:00-04:00')
+  const daily = { id: 'd', label: 'D', start: fold - day, end: fold - day + hour, recurrence: { rule: 'FREQ=DAILY;COUNT=5', timeZone: 'America/New_York' } }
+  const first = { id: 'd:' + fold, label: 'D', start: fold, end: fold + hour, seriesId: 'd', recurrenceId: fold }
+  const second = { id: 'd:' + (fold + hour), label: 'D', start: fold + hour, end: fold + 2 * hour, seriesId: 'd', recurrenceId: fold + hour }
+  const shifted = applyRecurringEdit([daily, first, second], { seriesId: 'd', recurrenceId: fold - day }, { start: fold, end: fold + hour }, 'series')
+  assert.equal(shifted[1].recurrenceId, shifted[2].recurrenceId)
+  assert.deepEqual(shifted.map(event => event.id), ['d', 'd:' + fold, 'd:' + (fold + hour)])
+})
+
 test('applyRecurringEdit validates its input and never mutates it', () => {
   const events = Object.freeze([Object.freeze({ ...meeting })])
   const target = { seriesId: 'sync', recurrenceId: weekly }

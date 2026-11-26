@@ -215,4 +215,11 @@ test('a duration in larger units reads back as the value it was formatted from',
     }
   }
   assert.deepEqual(parseFieldValue(hours, '1.5 h'), { ok: true, value: 5_400_000 })
+
+  // A bound that is not a whole number reads back from its own text: 0.29 × 100 is 28.999999999999996, shown as 0.29.
+  const bounded = { id: 'work', kind: 'duration', unitSize: 100, min: 0.07 * 100, max: 0.29 * 100 }
+  assert.equal(formatFieldValue(bounded, bounded.max), '0.29')
+  assert.deepEqual(parseFieldValue(bounded, '0.29'), { ok: true, value: bounded.max })
+  assert.deepEqual(parseFieldValue(bounded, formatFieldValue(bounded, bounded.min)), { ok: true, value: bounded.min })
+  assert.equal(parseFieldValue(bounded, '0.3').ok, false)
 })

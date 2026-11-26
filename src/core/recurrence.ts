@@ -742,11 +742,40 @@ function isOverrideOf(event: CalendarEvent | undefined, seriesId: string, at?: n
 /**
  * An override that `series` or `following` moves to `recurrenceId` of the series `seriesId`. An override with the ID that
  * `occurrence` gives it (`<seriesId>:<recurrenceId>`) takes the ID of its new occurrence, so it can never share an ID with
- * an occurrence the series generates later; another ID is kept.
+ * an occurrence the series generates later; another ID is kept. The old ID of a renamed override is recorded in
+ * `renamed`, so that `settleMovedIds` can restore it when the new ID is taken.
  */
-function movedOverride<E extends CalendarEvent>(event: E, oldSeriesId: string, seriesId: string, recurrenceId: number): E {
+function movedOverride<E extends CalendarEvent>(event: E, oldSeriesId: string, seriesId: string, recurrenceId: number, renamed: Map<E, string>): E {
   const id = event.id === `${oldSeriesId}:${event.recurrenceId}` ? `${seriesId}:${recurrenceId}` : event.id
-  return { ...event, id, seriesId, recurrenceId }
+  const moved = { ...event, id, seriesId, recurrenceId }
+  if (id !== event.id) renamed.set(moved, event.id)
+  return moved
+}
+
+/**
+ * Give back their old IDs to the renamed overrides of `renamed` whose new ID another event of `events` also has (an
+ * event that kept its ID, or another override renamed to the same ID, as two overrides on both sides of a daylight
+ * saving change can be). The old IDs are unique, as the input was, so restoring them never adds a duplicate; restoring
+ * one can free or take an ID another renamed override uses, so this repeats until nothing changes.
+ */
+function settleMovedIds<E extends CalendarEvent>(events: E[], renamed: Map<E, string>): E[] {
+  if (renamed.size === 0) return events
+  const result = events.slice()
+  const pending = new Set(result.filter(event => renamed.has(event)))
+  for (let changed = true; changed;) {
+    changed = false
+    const counts = new Map<string, number>()
+    for (const event of result) counts.set(event.id, (counts.get(event.id) ?? 0) + 1)
+    for (let at = 0; at < result.length; at++) {
+      const event = result[at]!
+      if (!pending.has(event) || counts.get(event.id) === 1) continue
+      pending.delete(event)
+      const restored = { ...event, id: renamed.get(event)! }
+      result[at] = restored
+      changed = true
+    }
+  }
+  return result
 }
 
 function withResource<E extends CalendarEvent>(context: EditContext<E>, event: E): E {
@@ -806,8 +835,9 @@ function editSeries<E extends CalendarEvent>(context: EditContext<E>): E[] {
       ...(recurrence.rdates ? { rdates: prepared.rdates.map(move.shift) } : {}),
     },
   })
-  return events.filter(event => !isOverrideOf(event, series.id, recurrenceId))
-    .map(event => event === series ? next : isOverrideOf(event, series.id) ? movedOverride(event, series.id, series.id, move.shift(event.recurrenceId!)) : event)
+  const renamed = new Map<E, string>()
+  return settleMovedIds(events.filter(event => !isOverrideOf(event, series.id, recurrenceId))
+    .map(event => event === series ? next : isOverrideOf(event, series.id) ? movedOverride(event, series.id, series.id, move.shift(event.recurrenceId!), renamed) : event), renamed)
 }
 
 /**
@@ -868,13 +898,14 @@ function editFollowing<E extends CalendarEvent>(context: EditContext<E>, options
     },
   })
   const result: E[] = []
+  const renamed = new Map<E, string>()
   for (const event of events) {
     if (event === series) result.push(truncated, following)
     else if (isOverrideOf(event, series.id, recurrenceId)) continue
-    else if (isOverrideOf(event, series.id) && event.recurrenceId! > recurrenceId) result.push(movedOverride(event, series.id, newId, move.shift(event.recurrenceId!)))
+    else if (isOverrideOf(event, series.id) && event.recurrenceId! > recurrenceId) result.push(movedOverride(event, series.id, newId, move.shift(event.recurrenceId!), renamed))
     else result.push(event)
   }
-  return result
+  return settleMovedIds(result, renamed)
 }
 
 /**
@@ -897,7 +928,8 @@ function editFollowing<E extends CalendarEvent>(context: EditContext<E>, options
  *
  * An override that `series` or `following` moves to another `recurrenceId` (or to the new series) and has the ID that
  * `occurrence` gives it (`<seriesId>:<recurrenceId>`) takes the ID of its new occurrence, so it never shares an ID with
- * an occurrence of the series; an override with another ID keeps it.
+ * an occurrence of the series; an override with another ID keeps it. When another event already has that new ID (or
+ * another moved override takes it too), the override keeps its old ID instead, so the edit never creates a duplicate ID.
  *
  * When the change moves the occurrence to another local day, BYDAY weekdays and BYMONTHDAY days move by the same number
  * of days; the other parts of the rule are kept. A move to another day throws an Error when it would change what the

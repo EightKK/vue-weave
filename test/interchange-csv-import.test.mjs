@@ -66,14 +66,18 @@ test('timelineFromCsvTable reverses timelineCsvTable through toCsv and parseCsv'
   assert.equal(toCsv(timelineCsvTable(result.rows, result.bars)), csv)
 })
 
-test('a progress below 1e-6 is written in plain decimal notation and reads back to the same number', () => {
+test('a progress below 1e-6 stays a number cell, is written in plain decimal notation and reads back to the same number', () => {
   const rows = [{ id: 'r', label: 'R' }]
   const progresses = [5e-7, 1.2345e-10, 1e-6, 0.000001234, 0.5]
   const bars = progresses.map((progress, i) => ({ id: 'b' + i, rowId: 'r', label: 'B' + i, start: 0, end: hour, progress }))
   const table = timelineCsvTable(rows, bars)
-  assert.deepEqual(table.slice(1).map(record => record[5]), ['0.0000005', '0.00000000012345', 0.000001, 0.000001234, 0.5])
-  const back = timelineFromCsvTable(parseCsv(toCsv(table)), { parseTime })
-  assert.deepEqual(back.bars.map(bar => bar.progress), progresses)
+  assert.deepEqual(table.slice(1).map(record => record[5]), progresses)
+  const csv = toCsv(table)
+  assert.deepEqual(parseCsv(csv).slice(1).map(record => record[5]), ['0.0000005', '0.00000000012345', '0.000001', '0.000001234', '0.5'])
+  assert.deepEqual(timelineFromCsvTable(parseCsv(csv), { parseTime }).bars.map(bar => bar.progress), progresses)
+  // The table reads back directly as well, without CSV text in between.
+  assert.deepEqual(timelineFromCsvTable(table, { parseTime }).bars.map(bar => bar.progress), progresses)
+  assert.equal(toCsv([[-2.5e-8, 1e21]]), '-0.000000025,1e+21\r\n')
 })
 
 test('timelineFromCsvTable supports custom headers, column lists, labels without WBS and missing parents', () => {
